@@ -1,0 +1,62 @@
+# config/robots/aka01b.yaml
+# AKA-01B机器人特定配置
+
+# 硬件配置
+HARDWARE:
+  MODE: "rk3588"
+  MODEL_FORMAT: "rknn"
+  
+  BASE:
+    TYPE: "mecanum"
+    WHEEL_RADIUS: 0.04
+    MAX_LINEAR_SPEED: 0.4
+    MAX_ANGULAR_SPEED: 1.0
+    
+    MOTORS:
+      - name: "front_left"
+        in2: 16
+        in1: 17
+        phase_A: 20
+        phase_B: 21
+        pwm_chip: 0
+        pwm_channel: 0
+        direction_inverted: false
+      - name: "front_right"
+        in2: 5
+        in1: 6
+        phase_A: 12
+        phase_B: 13
+        pwm_chip: 0
+        pwm_channel: 1
+        direction_inverted: true
+      - name: "back_left"
+        in2: 22
+        in1: 23
+        phase_A: 19
+        phase_B: 26
+        pwm_chip: 1
+        pwm_channel: 0
+        direction_inverted: false
+      - name: "back_right"
+        in2: 10
+        in1: 9
+        phase_A: 7
+        phase_B: 8
+        pwm_chip: 1
+        pwm_channel: 1
+        direction_inverted: true
+    
+    PID:
+      KP: 0.5
+      KI: 0.1
+      KD: 0.0
+
+  CAMERA:
+    TYPE: "usb"
+    DEVICE_ID: 0
+    RESOLUTION: [640, 480]
+    FRAME_RATE: 30
+
+# 设备特定参数
+PARAMETERS:
+  FRAME_WIDTH: 640
