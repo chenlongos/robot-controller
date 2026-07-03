@@ -7,55 +7,63 @@ HARDWARE:
   MODEL_FORMAT: "rknn"
   
   BASE:
-    TYPE: "mecanum"
-    WHEEL_RADIUS: 0.04
+    TYPE: "differential"
+    WHEEL_RADIUS: 0.042
+    WHEEL_BASE: 0.195
     MAX_LINEAR_SPEED: 0.4
     MAX_ANGULAR_SPEED: 1.0
     
     MOTORS:
       - name: "front_left"
-        in2: 16
-        in1: 17
-        phase_A: 20
-        phase_B: 21
+        in2: 36
+        in1: 39
+        phase_A: 40
+        phase_B: 42
         pwm_chip: 0
         pwm_channel: 0
-        direction_inverted: false
+        direction_inverted: true
       - name: "front_right"
-        in2: 5
-        in1: 6
-        phase_A: 12
-        phase_B: 13
-        pwm_chip: 0
-        pwm_channel: 1
-        direction_inverted: true
-      - name: "back_left"
-        in2: 22
-        in1: 23
-        phase_A: 19
-        phase_B: 26
+        in2: 47
+        in1: 63
+        phase_A: 96
+        phase_B: 114
         pwm_chip: 1
         pwm_channel: 0
         direction_inverted: false
-      - name: "back_right"
-        in2: 10
-        in1: 9
-        phase_A: 7
-        phase_B: 8
-        pwm_chip: 1
-        pwm_channel: 1
+      - name: "back_left"
+        in2: 34
+        in1: 44
+        phase_A: 45
+        phase_B: 46
+        pwm_chip: 5
+        pwm_channel: 0
         direction_inverted: true
+      - name: "back_right"
+        in2: 35
+        in1: 101
+        phase_A: 100
+        phase_B: 99
+        pwm_chip: 4
+        pwm_channel: 0
+        direction_inverted: false
     
     PID:
-      KP: 0.5
-      KI: 0.1
-      KD: 0.0
+      KP: 1.8
+      KI: 0.004
+      KD: 0.002
 
   CAMERA:
     TYPE: "usb"
     DEVICE_ID: 0
     RESOLUTION: [640, 480]
     FRAME_RATE: 30
+
+  ARM:
+    TYPE: "so101"
+    PORT: "/dev/ttyUSB0"
+    USE_DEGREES: false
+    DISABLE_TORQUE_ON_DISCONNECT: true
+    MAX_RELATIVE_TARGET: 5.0
 
 # 设备特定参数
 PARAMETERS:
