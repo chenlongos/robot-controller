@@ -1,0 +1,29 @@
+# config/robots/aka00v4-rk3576.yaml
+# AKA-00V4-RK3576机器人特定配置（ESP32-C3 TT底盘，无机械臂）
+
+HARDWARE:
+  MODE: "rk3576"
+  MODEL_FORMAT: "rknn"
+  
+  BASE:
+    TYPE: "differential"
+    DRIVER: "esp32_c3_tt"
+    WHEEL_RADIUS: 0.042
+    WHEEL_BASE: 0.195
+    MAX_LINEAR_SPEED: 0.4
+    MAX_ANGULAR_SPEED: 1.0
+    
+    UART:
+      PORT: "/dev/ttyS2"
+      BAUDRATE: 115200
+      PPR: 4680
+      PWM_FREQ: 20000
+
+  CAMERA:
+    TYPE: "usb"
+    DEVICE_ID: 0
+    RESOLUTION: [640, 480]
+    FRAME_RATE: 30
+
+PARAMETERS:
+  FRAME_WIDTH: 640

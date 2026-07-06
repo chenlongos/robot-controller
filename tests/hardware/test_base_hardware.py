@@ -2,7 +2,7 @@
 import pytest
 import time
 import os
-from src.base.motor import Motor
+from src.base.d24a_jgb37 import Motor
 from src.base.differential_base import DifferentialBase
 from src.base.mecanum_base import MecanumBase
 from src.config_loader import load_config

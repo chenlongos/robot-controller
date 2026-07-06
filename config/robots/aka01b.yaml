@@ -8,6 +8,7 @@ HARDWARE:
   
   BASE:
     TYPE: "differential"
+    DRIVER: "d24a_jgb37"
     WHEEL_RADIUS: 0.042
     WHEEL_BASE: 0.195
     MAX_LINEAR_SPEED: 0.4

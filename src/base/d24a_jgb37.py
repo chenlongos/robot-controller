@@ -1,5 +1,5 @@
-# src/base/motor.py
-"""电机控制模块 - 底盘的核心组件"""
+# src/base/d24a_jgb37.py
+"""D24A-JGB37电机控制模块 - 底盘的核心组件"""
 
 from periphery import GPIO, PWM
 import time

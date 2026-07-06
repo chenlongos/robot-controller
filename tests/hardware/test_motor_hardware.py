@@ -1,8 +1,8 @@
-"""电机硬件测试 - 测试 src/base/motor.py 中的 Motor 类实现"""
+"""电机硬件测试 - 测试 src/base/d24a_jgb37.py 中的 Motor 类实现"""
 import pytest
 import time
 import os
-from src.base.motor import Motor
+from src.base.d24a_jgb37 import Motor
 from src.config_loader import load_config
 
 # 从配置文件加载电机配置

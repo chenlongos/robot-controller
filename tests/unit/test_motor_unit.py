@@ -2,7 +2,7 @@
 import pytest
 import time
 from unittest.mock import Mock, patch, MagicMock
-from src.base.motor import Motor, PIDController, EncoderCounter, MecanumController, DifferentialController, BaseFactory, get_gpio_chip_and_line
+from src.base.d24a_jgb37 import Motor, PIDController, EncoderCounter, MecanumController, DifferentialController, BaseFactory, get_gpio_chip_and_line
 from src.config_loader import load_config, MotorConfig
 
 # 从配置文件加载电机配置
@@ -28,8 +28,8 @@ class TestMotorUnit:
     @pytest.mark.parametrize("config", MOTOR_CONFIGS_FROM_CONFIG)
     def test_motor_initialization(self, config):
         """测试电机初始化"""
-        with patch('src.base.motor.GPIO'), patch('src.base.motor.PWM'), \
-             patch('src.base.motor.EncoderCounter') as mock_encoder:
+        with patch('src.base.d24a_jgb37.GPIO'), patch('src.base.d24a_jgb37.PWM'), \
+             patch('src.base.d24a_jgb37.EncoderCounter') as mock_encoder:
             
             # 创建电机实例
             motor = Motor(
@@ -60,9 +60,9 @@ class TestMotorUnit:
     @pytest.mark.parametrize("config", MOTOR_CONFIGS_FROM_CONFIG)
     def test_motor_speed_control(self, config):
         """测试电机速度控制（set_speed + get_speed）"""
-        with patch('src.base.motor.GPIO') as mock_gpio_class, \
-             patch('src.base.motor.PWM') as mock_pwm_class, \
-             patch('src.base.motor.EncoderCounter') as mock_encoder_class:
+        with patch('src.base.d24a_jgb37.GPIO') as mock_gpio_class, \
+             patch('src.base.d24a_jgb37.PWM') as mock_pwm_class, \
+             patch('src.base.d24a_jgb37.EncoderCounter') as mock_encoder_class:
             
             # 设置 mock 返回值
             mock_encoder = Mock()
@@ -136,7 +136,7 @@ class TestBaseControllerUnit:
         factory = BaseFactory()
         assert factory is not None
     
-    @patch('src.base.motor.Motor')
+    @patch('src.base.d24a_jgb37.Motor')
     def test_differential_controller_move_forward(self, mock_motor_class):
         """测试差分控制器前进"""
         # 创建 mock 电机
@@ -162,7 +162,7 @@ class TestBaseControllerUnit:
         
         controller.cleanup()
     
-    @patch('src.base.motor.Motor')
+    @patch('src.base.d24a_jgb37.Motor')
     def test_differential_controller_turn_left(self, mock_motor_class):
         """测试差分控制器左转"""
         mock_motors = {
@@ -184,7 +184,7 @@ class TestBaseControllerUnit:
         
         controller.cleanup()
     
-    @patch('src.base.motor.Motor')
+    @patch('src.base.d24a_jgb37.Motor')
     def test_differential_controller_stop(self, mock_motor_class):
         """测试差分控制器停止"""
         mock_motors = {
@@ -209,7 +209,7 @@ class TestBaseControllerUnit:
         
         controller.cleanup()
     
-    @patch('src.base.motor.Motor')
+    @patch('src.base.d24a_jgb37.Motor')
     def test_mecanum_controller_move(self, mock_motor_class):
         """测试麦轮控制器运动"""
         mock_motors = {
@@ -235,7 +235,7 @@ class TestBaseControllerUnit:
         
         controller.cleanup()
     
-    @patch('src.base.motor.Motor')
+    @patch('src.base.d24a_jgb37.Motor')
     def test_mecanum_controller_strafe_right(self, mock_motor_class):
         """测试麦轮控制器侧移"""
         mock_motors = {

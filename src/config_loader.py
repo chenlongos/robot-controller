@@ -62,15 +62,25 @@ class PIDConfig:
     kd: float
 
 @dataclass
+class UARTConfig:
+    """UART配置"""
+    port: str
+    baudrate: int
+    ppr: int
+    pwm_freq: int
+
+@dataclass
 class BaseConfig:
     """底盘配置"""
     type: str
+    driver: str
     wheel_radius: float
     wheel_base: float
     max_linear_speed: float
     max_angular_speed: float
-    motors: List[MotorConfig]
-    pid: PIDConfig
+    motors: Optional[List[MotorConfig]] = None
+    pid: Optional[PIDConfig] = None
+    uart: Optional[UARTConfig] = None
 
 @dataclass
 class CameraConfig:
@@ -134,33 +144,50 @@ def load_robot_config(robot_name: str, config_dir: str = "config") -> Dict[str, 
 
 def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> RobotConfig:
     """加载完整配置"""
-    # 获取基础目录
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     full_config_dir = os.path.join(base_dir, config_dir)
     
-    # 加载通用配置和机器人特定配置
     common = load_common_config(full_config_dir)
     robot = load_robot_config(robot_name, full_config_dir)
     
-    # 加载电机配置
-    motors_config = []
-    for motor_data in robot['HARDWARE']['BASE']['MOTORS']:
-        motors_config.append(MotorConfig(
-            name=motor_data['name'],
-            in2=motor_data['in2'],
-            in1=motor_data['in1'],
-            phase_A=motor_data['phase_A'],
-            phase_B=motor_data['phase_B'],
-            pwm_chip=motor_data['pwm_chip'],
-            pwm_channel=motor_data['pwm_channel'],
-            direction_inverted=motor_data.get('direction_inverted', False)
-        ))
+    base_data = robot['HARDWARE']['BASE']
+    base_type = base_data['TYPE']
+    driver_type = base_data['DRIVER']
     
-    # 加载机械臂配置（可选）
+    motors_config = None
+    pid_config = None
+    uart_config = None
+    
+    if driver_type == "d24a_jgb37":
+        motors_config = []
+        for motor_data in base_data['MOTORS']:
+            motors_config.append(MotorConfig(
+                name=motor_data['name'],
+                in2=motor_data['in2'],
+                in1=motor_data['in1'],
+                phase_A=motor_data['phase_A'],
+                phase_B=motor_data['phase_B'],
+                pwm_chip=motor_data['pwm_chip'],
+                pwm_channel=motor_data['pwm_channel'],
+                direction_inverted=motor_data.get('direction_inverted', False)
+            ))
+        pid_config = PIDConfig(
+            kp=base_data['PID']['KP'],
+            ki=base_data['PID']['KI'],
+            kd=base_data['PID']['KD']
+        )
+    elif driver_type == "esp32_c3_tt":
+        uart_data = base_data['UART']
+        uart_config = UARTConfig(
+            port=uart_data['PORT'],
+            baudrate=uart_data['BAUDRATE'],
+            ppr=uart_data['PPR'],
+            pwm_freq=uart_data['PWM_FREQ']
+        )
+    
     arm_config = None
     if 'ARM' in robot['HARDWARE']:
         arm_data = robot['HARDWARE']['ARM']
-        # 使用 get 方法提供默认值，避免 KeyError
         arm_config = ArmConfig(
             type=arm_data.get('TYPE', 'unknown'),
             servo_ids=arm_data.get('SERVO_IDS', []),
@@ -203,17 +230,15 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
                 mode=robot['HARDWARE']['MODE'],
                 model_format=robot['HARDWARE']['MODEL_FORMAT'],
                 base=BaseConfig(
-                    type=robot['HARDWARE']['BASE']['TYPE'],
-                    wheel_radius=robot['HARDWARE']['BASE']['WHEEL_RADIUS'],
-                    wheel_base=robot['HARDWARE']['BASE']['WHEEL_BASE'],
-                    max_linear_speed=robot['HARDWARE']['BASE']['MAX_LINEAR_SPEED'],
-                    max_angular_speed=robot['HARDWARE']['BASE']['MAX_ANGULAR_SPEED'],
+                    type=base_type,
+                    driver=driver_type,
+                    wheel_radius=base_data['WHEEL_RADIUS'],
+                    wheel_base=base_data['WHEEL_BASE'],
+                    max_linear_speed=base_data['MAX_LINEAR_SPEED'],
+                    max_angular_speed=base_data['MAX_ANGULAR_SPEED'],
                     motors=motors_config,
-                    pid=PIDConfig(
-                        kp=robot['HARDWARE']['BASE']['PID']['KP'],
-                        ki=robot['HARDWARE']['BASE']['PID']['KI'],
-                        kd=robot['HARDWARE']['BASE']['PID']['KD']
-                    )
+                    pid=pid_config,
+                    uart=uart_config
                 ),
                 camera=CameraConfig(
                     type=robot['HARDWARE']['CAMERA']['TYPE'],
