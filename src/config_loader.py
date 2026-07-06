@@ -210,12 +210,12 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
             max_objects_per_task=common['TASK']['MAX_OBJECTS_PER_TASK']
         ),
         vision=VisionConfig(
-            model_name=common['VISION']['MODEL_NAME'],
-            confidence_threshold=common['VISION']['CONFIDENCE_THRESHOLD'],
-            nms_threshold=common['VISION']['NMS_THRESHOLD'],
-            input_size=common['VISION']['INPUT_SIZE'],
-            tennis_width_far=common['VISION']['TENNIS_WIDTH_FAR'],
-            tennis_width_near=common['VISION']['TENNIS_WIDTH_NEAR']
+            model_name=robot['VISION']['MODEL_NAME'],
+            confidence_threshold=robot['VISION']['CONFIDENCE_THRESHOLD'],
+            nms_threshold=robot['VISION']['NMS_THRESHOLD'],
+            input_size=robot['VISION']['INPUT_SIZE'],
+            tennis_width_far=robot['VISION']['TENNIS_WIDTH_FAR'],
+            tennis_width_near=robot['VISION']['TENNIS_WIDTH_NEAR']
         ),
         control=ControlConfig(
             kp_dist=common['CONTROL']['KP_DIST'],
