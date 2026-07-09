@@ -205,9 +205,12 @@ class Esp32C3TtDriver:
         return self._send_cmd(CMD_CONFIG, payload)
     
     def set_speeds(self, left: int, right: int) -> None:
-        """设置左右轮速度（-100~100，百分比）"""
-        left_pwm = max(-100, min(100, left))
-        right_pwm = max(-100, min(100, right))
+        """设置左右轮速度（-100~100，百分比）
+        
+        注意：由于硬件接线原因，速度值需要取反
+        """
+        left_pwm = max(-100, min(100, -left))
+        right_pwm = max(-100, min(100, -right))
         
         payload = struct.pack(">hh", left_pwm, right_pwm)
         self._send_cmd_noresp(CMD_SET_SPEEDS, payload)

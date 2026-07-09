@@ -365,3 +365,146 @@ class VisionModule:
         if (self.hardware_mode == 'rk3588' or self.hardware_mode == 'rk3576') and self.rknn is not None:
             self.rknn.release()
             self.logger.info("RKNN模型资源已释放")
+    
+    def calibrate_distance(self, robot_type: str, camera: object, 
+                          distances: list = [0.2, 0.3, 0.5, 0.8, 1.0, 1.5, 2.0],
+                          config_dir: str = 'config') -> bool:
+        """
+        交互式校准距离计算参数
+        
+        使用公式: D(cm) = M / P + C(cm)
+        通过在不同距离放置网球，收集检测框宽度，拟合得到 M 和 C。
+        
+        Args:
+            robot_type: 机器人类型（如 'aka01b'）
+            camera: 相机对象，需实现 capture() 方法返回帧
+            distances: 校准距离列表（米）
+            config_dir: 校准文件保存目录
+            
+        Returns:
+            bool: 校准是否成功
+        """
+        import os
+        
+        print("=" * 60)
+        print("距离校准工具")
+        print("=" * 60)
+        print("请按照提示在指定距离放置网球")
+        print("输入 'y' - 确认放置完成，开始采集")
+        print("输入 'n' - 跳过当前位置")
+        print("输入 'q' - 退出校准")
+        print("=" * 60)
+        
+        collected_data = []
+        
+        for dist in distances:
+            print(f"\n请将网球放置在距离机器人 {dist} 米处")
+            
+            while True:
+                user_input = input("放置完成请输入 'y'，跳过输入 'n'，退出输入 'q': ").strip().lower()
+                
+                if user_input == 'q':
+                    print("退出交互，开始计算")
+                    break
+                
+                if user_input == 'n':
+                    print(f"跳过 {dist} 米")
+                    break
+                
+                if user_input == 'y':
+                    break
+                
+                print("无效输入，请输入 'y', 'n' 或 'q'")
+            
+            if user_input == 'q':
+                break
+            
+            if user_input == 'n':
+                continue
+            
+            frame = camera.capture(flush_frames=5)
+            if frame is None:
+                print(f"无法捕获图像，跳过 {dist} 米")
+                continue
+            
+            detections = self.infer(frame)
+            if not detections:
+                print(f"未检测到网球，跳过 {dist} 米")
+                continue
+            
+            best_detection = max(detections, key=lambda d: d.get('score', 0))
+            bbox_x = best_detection.get('x', 0)
+            bbox_y = best_detection.get('y', 0)
+            bbox_width = best_detection.get('w', 0)
+            bbox_height = best_detection.get('h', 0)
+            bbox_score = best_detection.get('score', 0)
+            pixel_size = max(bbox_width, bbox_height)
+            
+            # frame_copy = frame.copy()
+            # x1, y1 = bbox_x, bbox_y
+            # x2, y2 = bbox_x + bbox_width, bbox_y + bbox_height
+            # cv2.rectangle(frame_copy, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            # cv2.putText(frame_copy, f"{dist}m score:{bbox_score:.3f}", (x1, y1 - 10),
+            #             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            # image_path = os.path.join(config_dir, f'calibration_{dist}m.jpg')
+            # cv2.imwrite(image_path, frame_copy)
+            # print(f"  检测图像已保存: {image_path}")
+            
+            print(f"  检测框: x={bbox_x}, y={bbox_y}, w={bbox_width}, h={bbox_height}, score={bbox_score:.3f}")
+            print(f"  图像尺寸: {frame.shape[1]}x{frame.shape[0]}")
+            
+            if pixel_size <= 0:
+                print(f"  检测框无效，跳过 {dist} 米")
+                continue
+            
+            print(f"  像素大小: {pixel_size} 像素")
+            collected_data.append({
+                'distance_m': dist,
+                'distance_cm': dist * 100,
+                'pixel_size': pixel_size
+            })
+        
+        if len(collected_data) < 2:
+            print(f"数据不足（仅收集到 {len(collected_data)} 个点），无法进行拟合")
+            return False
+        
+        print(f"\n共收集到 {len(collected_data)} 个数据点")
+        print("=" * 60)
+        
+        distances_cm = np.array([d['distance_cm'] for d in collected_data])
+        pixel_sizes = np.array([d['pixel_size'] for d in collected_data])
+        
+        x_data = 1.0 / pixel_sizes
+        y_data = distances_cm
+        
+        coefficients = np.polyfit(x_data, y_data, 1)
+        M = coefficients[0]
+        C = coefficients[1]
+        
+        print(f"拟合结果:")
+        print(f"  M = {M:.4f}")
+        print(f"  C = {C:.4f}")
+        print(f"  公式: D(cm) = {M:.4f} / P + {C:.4f}")
+        
+        calibration_file = os.path.join(config_dir, f'calibration_{robot_type}_distance.yaml')
+        
+        calibration_data = {
+            'robot_type': robot_type,
+            'calibration_type': 'distance',
+            'formula': 'D(cm) = M / P + C',
+            'M': float(M),
+            'C': float(C),
+            'data_points': len(collected_data),
+            'raw_data': collected_data
+        }
+        
+        os.makedirs(config_dir, exist_ok=True)
+        
+        import yaml
+        with open(calibration_file, 'w') as f:
+            yaml.dump(calibration_data, f, default_flow_style=False, sort_keys=False)
+        
+        print(f"\n校准文件已保存: {calibration_file}")
+        print("=" * 60)
+        
+        return True

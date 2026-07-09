@@ -33,6 +33,7 @@ class USBCamera(CameraInterface):
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
             self.cap.set(cv2.CAP_PROP_FPS, self.frame_rate)
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             
             self.logger.info(f"摄像头已打开 (设备ID: {self.device_id}, 分辨率: {self.resolution}, 帧率: {self.frame_rate})")
             return True
@@ -40,13 +41,16 @@ class USBCamera(CameraInterface):
             self.logger.error(f"打开摄像头失败: {e}")
             return False
     
-    def capture(self) -> cv2.Mat:
+    def capture(self, flush_frames: int = 5) -> cv2.Mat:
         """捕获一帧图像"""
         if self.cap is None or not self.cap.isOpened():
             self.logger.warning("摄像头未打开")
             return None
         
-        ret, frame = self.cap.read()
+        for _ in range(flush_frames):
+            self.cap.grab()
+        
+        ret, frame = self.cap.retrieve()
         if not ret:
             self.logger.warning("无法读取帧")
             return None

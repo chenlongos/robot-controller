@@ -165,7 +165,7 @@ def main():
             start_time = time.time() * 1000
             
             # 捕获帧
-            frame = camera.capture()
+            frame = camera.capture(flush_frames=1)
             if frame is None:
                 logging.warning("无法捕获帧，重试...")
                 continue

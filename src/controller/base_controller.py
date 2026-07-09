@@ -20,7 +20,7 @@ class BaseController:
     
     def search(self) -> Dict[str, float]:
         """搜索模式 - 360度旋转扫描，返回角速度指令"""
-        search_speed = self.config.get('search_rotation_speed', 0.5)
+        search_speed = self.config.get('search_rotation_speed', 0.3)
         self.base.move(0.0, 0.0, search_speed)
         return {"w": search_speed}
     
@@ -34,21 +34,17 @@ class BaseController:
             线速度和角速度指令
         """
         error_x = observation.get("target_offset_x", 0.0)
-        distance = observation.get("target_distance", float('inf'))
         
         kp_angle = self.config.get('kp_angle', 0.5)
         max_linear_speed = self.config.get('max_linear_speed', 0.4)
-        approach_threshold = self.config.get('approach_threshold', 0.5)
+        target_x = self.config.get('target_x', 0.0)
         
-        angular_speed = kp_angle * error_x
+        angular_speed = kp_angle * (error_x - target_x)
         angular_speed = max(-1.0, min(1.0, angular_speed))
         
-        if distance < approach_threshold:
-            linear_speed = 0.0
-        else:
-            offset_ratio = min(abs(error_x) / 320.0, 1.0)
-            speed_factor = 1.0 - offset_ratio * 0.7
-            linear_speed = max_linear_speed * speed_factor
+        offset_ratio = min(abs(error_x) / 320.0, 1.0)
+        speed_factor = 1.0 - offset_ratio * 0.7
+        linear_speed = max_linear_speed * speed_factor
         
         self.base.move(linear_speed, 0.0, angular_speed)
         return {"x": linear_speed, "w": angular_speed}
@@ -62,60 +58,55 @@ class BaseController:
             observation: 包含 target_distance, target_offset_x 的观测数据
         
         Returns:
-            线速度和角速度指令，以及是否完成的状态
+            线速度和角速度指令
         """
         distance = observation.get("target_distance", 1.0)
         error_x = observation.get("target_offset_x", 0.0)
         
         max_speed = self.config.get('max_speed', 0.3)
-        stop_threshold = self.config.get('stop_threshold', 0.05)
-        angle_threshold = self.config.get('angle_threshold', 10.0)
+        target_x = self.config.get('target_x', 0.0)
+        target_distance = self.config.get('target_distance', 0.3)
         
         kp_dist = self.config.get('approach_kp', 2.0)
         ki_dist = self.config.get('approach_ki', 0.5)
         kd_dist = self.config.get('approach_kd', 0.1)
         kp_angle = self.config.get('approach_kp_angle', 0.5)
         
-        distance_done = distance <= stop_threshold
-        angle_done = abs(error_x) <= angle_threshold
+        angular_speed = kp_angle * (error_x - target_x)
+        angular_speed = max(-0.8, min(0.8, angular_speed))
         
-        if distance_done and angle_done:
-            self.base.move(0.0, 0.0, 0.0)
-            return {"x": 0.0, "w": 0.0, "done": True}
+        error_dist = distance - target_distance
         
-        if not angle_done:
-            angular_speed = kp_angle * error_x
-            angular_speed = max(-0.8, min(0.8, angular_speed))
+        max_integral = max_speed / ki_dist if ki_dist > 0 else float('inf')
+        self._integral += error_dist
+        self._integral = max(-max_integral, min(max_integral, self._integral))
+        
+        if self._prev_distance is not None:
+            derivative = distance - self._prev_distance
         else:
-            angular_speed = 0.0
+            derivative = 0.0
+        self._prev_distance = distance
         
-        if distance_done:
-            linear_speed = 0.0
-        else:
-            self._integral += distance
-            
-            if self._prev_distance is not None:
-                derivative = distance - self._prev_distance
-            else:
-                derivative = 0.0
-            self._prev_distance = distance
-            
-            speed = kp_dist * distance + ki_dist * self._integral + kd_dist * derivative
-            
-            if not angle_done:
-                speed *= 0.3
-            
-            min_speed = 0.05
+        speed = kp_dist * error_dist + ki_dist * self._integral + kd_dist * derivative
+        
+        min_speed = 0.09
+        if speed > 0:
             linear_speed = max(min_speed, min(max_speed, speed))
+        else:
+            linear_speed = min(-min_speed, max(-max_speed, speed))
         
         self.base.move(linear_speed, 0.0, angular_speed)
-        return {"x": linear_speed, "w": angular_speed, "done": False, "distance_done": distance_done, "angle_done": angle_done}
+        return {"x": linear_speed, "w": angular_speed}
+    
+    def reset_pid(self) -> None:
+        """重置PID状态"""
+        self._prev_distance = None
+        self._integral = 0.0
     
     def stop(self) -> None:
         """停止底盘"""
         self.base.stop()
-        self._prev_distance = None
-        self._integral = 0.0
+        self.reset_pid()
     
     def move(self, x: float, y: float, w: float) -> None:
         """直接控制底盘运动"""

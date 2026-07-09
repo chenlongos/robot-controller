@@ -49,7 +49,7 @@ class TestVisionModule:
             test_frames = 10
             
             for i in range(test_frames):
-                frame = camera.capture()
+                frame = camera.capture(flush_frames=1)
                 if frame is None:
                     logger.warning(f"  警告: 第 {i+1} 帧捕获失败")
                     continue

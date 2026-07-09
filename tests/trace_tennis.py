@@ -1,35 +1,72 @@
 """网球自动追踪测试程序"""
 import sys
 import os
+import signal
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import cv2
 import time
 import logging
-import src.base
 from src.controller.vision_module import VisionModule
 from src.controller.base_controller import BaseController
 from src.abstract.base_factory import BaseFactory
+import src.base
 from src.config_loader import load_config
 from src.camera.usb_camera import USBCamera
+
+running = True
+
+def signal_handler(signum, frame):
+    global running
+    running = False
+    logging.info(f"收到信号 {signum}，正在退出...")
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
-def calculate_distance(bbox_width: int, frame_width: int, tennis_width_far: int, tennis_width_near: int) -> float:
+def load_calibration_params(robot_type: str, config_dir: str = 'config') -> dict:
+    """从校准文件加载距离计算参数
+    
+    Args:
+        robot_type: 机器人类型（如 'aka01b'）
+        config_dir: 校准文件目录
+        
+    Returns:
+        dict: 包含 M 和 C 的字典，若文件不存在则返回默认值
+    """
+    import os
+    import yaml
+    
+    calibration_file = os.path.join(config_dir, f'calibration_{robot_type}_distance.yaml')
+    
+    if os.path.exists(calibration_file):
+        try:
+            with open(calibration_file, 'r') as f:
+                data = yaml.safe_load(f)
+                return {
+                    'M': data.get('M', 6042.48),
+                    'C': data.get('C', -2.83)
+                }
+        except Exception as e:
+            print(f"加载校准文件失败: {e}")
+    
+    return {'M': 6042.48, 'C': -2.83}
+
+
+def calculate_distance(bbox_width: int, M: float = None, C: float = None) -> float:
     """根据检测框宽度估算真实世界距离（米）
     
-    使用配置中的网球宽度阈值进行线性插值估算距离：
-    - 当检测框宽度接近 TENNIS_WIDTH_NEAR（大）时，距离较近
-    - 当检测框宽度接近 TENNIS_WIDTH_FAR（小）时，距离较远
+    使用公式: D(cm) = M / P + C(cm)
     
     Args:
         bbox_width: 检测框宽度（像素）
-        frame_width: 图像宽度（像素）
-        tennis_width_far: 远处网球的参考宽度（像素）
-        tennis_width_near: 近处网球的参考宽度（像素）
+        M: 校准参数M（可选，若为None则使用默认值）
+        C: 校准参数C（可选，若为None则使用默认值）
         
     Returns:
         estimated_distance: 估算的距离（米）
@@ -37,19 +74,19 @@ def calculate_distance(bbox_width: int, frame_width: int, tennis_width_far: int,
     if bbox_width <= 0:
         return float('inf')
     
-    if bbox_width >= tennis_width_near:
-        return 0.5
+    if M is None:
+        M = 6042.48
+    if C is None:
+        C = -2.83
     
-    if bbox_width <= tennis_width_far:
-        return 5.0
+    distance_cm = M / bbox_width + C
+    distance_m = distance_cm / 100.0
     
-    ratio = (bbox_width - tennis_width_far) / (tennis_width_near - tennis_width_far)
-    distance = 5.0 - ratio * 4.5
-    
-    return max(0.3, distance)
+    return distance_m
 
 
-def calculate_observation(frame_width: int, frame_height: int, detections: list, config) -> dict:
+def calculate_observation(frame_width: int, frame_height: int, detections: list, config, 
+                          M: float = None, C: float = None) -> dict:
     """计算追踪所需的观测数据
     
     Args:
@@ -57,6 +94,8 @@ def calculate_observation(frame_width: int, frame_height: int, detections: list,
         frame_height: 图像高度
         detections: 检测结果列表
         config: 配置对象
+        M: 距离校准参数M（可选）
+        C: 距离校准参数C（可选）
         
     Returns:
         observation: 包含 target_offset_x, target_offset_y, target_distance 的观测数据
@@ -78,12 +117,7 @@ def calculate_observation(frame_width: int, frame_height: int, detections: list,
     bbox_width = best_detection['w']
     bbox_height = best_detection['h']
     
-    target_distance = calculate_distance(
-        bbox_width, 
-        frame_width,
-        config.vision.tennis_width_far,
-        config.vision.tennis_width_near
-    )
+    target_distance = calculate_distance(max(bbox_width, bbox_height), M, C)
     
     return {
         "target_offset_x": target_offset_x,
@@ -95,13 +129,71 @@ def calculate_observation(frame_width: int, frame_height: int, detections: list,
     }
 
 
-def draw_tracking_info(frame: cv2.Mat, detections: list, observation: dict) -> cv2.Mat:
+def get_status(observation: dict, controller_config: dict) -> str:
+    """根据观测数据确定下一状态
+    
+    状态转换逻辑：
+    - 当推理结果为 null 时进入 search 模式
+    - 当球的距离较远时进入 track 模式（距离 > approach_threshold）
+    - 当球的距离较近时进入 approach 模式（距离 <= approach_threshold）
+    - 当球的范围满足 (target_x - threshold_x, target_x + threshold_x) 且
+      (target_distance - threshold_d, target_distance + threshold_d) 时进入 hold 模式
+    
+    Args:
+        observation: 观测数据
+        controller_config: 控制器配置参数
+        
+    Returns:
+        next_state: 下一状态
+    """
+    STATE_SEARCH = 'search'
+    STATE_TRACK = 'track'
+    STATE_APPROACH = 'approach'
+    STATE_HOLD = 'hold'
+    
+    distance = observation.get('target_distance', float('inf'))
+    error_x = observation.get('target_offset_x', 0.0)
+    has_target = distance != float('inf')
+    
+    if not has_target:
+        return STATE_SEARCH
+    
+    approach_threshold = controller_config.get('approach_threshold', 1.5)
+    target_x = controller_config.get('target_x', 0.0)
+    threshold_x = controller_config.get('threshold_x', 10.0)
+    target_distance = controller_config.get('target_distance', 0.3)
+    threshold_d = controller_config.get('threshold_d', 0.01)
+    
+    angle_done = (error_x >= target_x - threshold_x) and (error_x <= target_x + threshold_x)
+    distance_done = (distance >= target_distance - threshold_d) and (distance <= target_distance + threshold_d)
+    
+    if angle_done and distance_done:
+        return STATE_HOLD
+    
+    if distance > approach_threshold:
+        return STATE_TRACK
+    
+    return STATE_APPROACH
+
+
+def draw_tracking_info(frame: cv2.Mat, detections: list, observation: dict, config) -> cv2.Mat:
     """在图像上绘制追踪信息"""
     frame_copy = frame.copy()
     height, width = frame_copy.shape[:2]
     
     cv2.line(frame_copy, (int(width/2), 0), (int(width/2), height), (0, 255, 0), 2)
     cv2.line(frame_copy, (0, int(height/2)), (width, int(height/2)), (0, 255, 0), 2)
+    
+    stop_box_size = config.vision.tennis_width_near
+    stop_box_x1 = int(width/2 - stop_box_size/2)
+    stop_box_y1 = int(height/2 - stop_box_size/2)
+    stop_box_x2 = int(width/2 + stop_box_size/2)
+    stop_box_y2 = int(height/2 + stop_box_size/2)
+    
+    cv2.rectangle(frame_copy, (stop_box_x1, stop_box_y1), (stop_box_x2, stop_box_y2), 
+                  (0, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(frame_copy, "STOP", (stop_box_x1, stop_box_y1 - 10), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
     
     if detections:
         best_detection = max(detections, key=lambda d: d.get('score', 0))
@@ -136,7 +228,9 @@ def draw_tracking_info(frame: cv2.Mat, detections: list, observation: dict) -> c
 
 def main():
     """主程序入口"""
-    config = load_config(robot_name="aka00v4-rk3576")
+    global running
+    robot_name = "aka00v4-rk3576"
+    config = load_config(robot_name=robot_name)
     
     camera = None
     vision = None
@@ -144,6 +238,9 @@ def main():
     controller = None
     
     try:
+        calibration_params = load_calibration_params(robot_name)
+        logger.info(f"加载校准参数: M={calibration_params['M']:.4f}, C={calibration_params['C']:.4f}")
+        
         camera = USBCamera({
             'device_id': config.device.hardware.camera.device_id,
             'resolution': config.device.hardware.camera.resolution,
@@ -166,23 +263,28 @@ def main():
         logger.info(f"最大线速度: {base_config.max_linear_speed}m/s, 最大角速度: {base_config.max_angular_speed}rad/s")
         
         controller_config = {
-            'search_rotation_speed': 0.5,
+            'search_rotation_speed': config.control.search_rotation_speed,
             'kp_angle': 0.005,
             'max_linear_speed': base_config.max_linear_speed,
-            'approach_threshold': 1.5,
+            'approach_threshold': 0.9,
             'max_speed': base_config.max_linear_speed * 0.75,
-            'stop_threshold': 0.5,
-            'angle_threshold': 20.0,
-            'approach_kp': 0.8,
-            'approach_ki': 0.2,
-            'approach_kd': 0.1,
-            'approach_kp_angle': 0.003
+            'target_x': 0.0,
+            'threshold_x': 10.0,
+            'target_distance': 0.3,
+            'threshold_d': 0.01,
+            'approach_kp': 0.6,
+            'approach_ki': 0.01,
+            'approach_kd': 0.01,
+            'approach_kp_angle': 0.002,
         }
         
         controller = BaseController(base, controller_config)
         
         logger.info("网球追踪系统已启动")
-        logger.info("按 'q' 键退出")
+        if config.system.display_enabled:
+            logger.info("按 'q' 键退出")
+        else:
+            logger.info("按 Ctrl+C 退出")
         
         frame_count = 0
         total_detections = 0
@@ -191,15 +293,15 @@ def main():
         STATE_SEARCH = 'search'
         STATE_TRACK = 'track'
         STATE_APPROACH = 'approach'
-        STATE_STOP = 'stop'
+        STATE_HOLD = 'hold'
         
         current_state = STATE_SEARCH
         search_start_time = time.time()
         
-        while True:
+        while running:
             frame_start_time = time.time()
             
-            frame = camera.capture()
+            frame = camera.capture(flush_frames=1)
             if frame is None:
                 logger.warning("帧捕获失败")
                 time.sleep(0.1)
@@ -213,64 +315,57 @@ def main():
                 total_detections += len(results)
             
             height, width = frame.shape[:2]
-            observation = calculate_observation(width, height, results, config)
+            observation = calculate_observation(width, height, results, config,
+                                               M=calibration_params['M'],
+                                               C=calibration_params['C'])
+            
+            next_state = get_status(observation, controller_config)
+            
+            if next_state != current_state:
+                if next_state == STATE_APPROACH:
+                    controller.reset_pid()
+                if next_state == STATE_SEARCH:
+                    search_start_time = time.time()
+                logger.info(f"状态转换: {current_state} -> {next_state}")
+                current_state = next_state
             
             if current_state == STATE_SEARCH:
-                if results:
-                    current_state = STATE_TRACK
-                    logger.info(f"检测到目标，切换到追踪模式")
-                else:
-                    command = controller.search()
-                    if time.time() - search_start_time > 10:
-                        search_start_time = time.time()
-                        logger.info("搜索中...")
+                command = controller.search()
+                w = command.get('w', 0.0)
+                if time.time() - search_start_time > 10:
+                    search_start_time = time.time()
+                    logger.info(f"搜索中: speed_w={w:.3f}")
             
             elif current_state == STATE_TRACK:
-                if not results:
-                    current_state = STATE_SEARCH
-                    search_start_time = time.time()
-                    logger.info("目标丢失，切换到搜索模式")
-                else:
-                    if observation['target_distance'] < controller_config['approach_threshold']:
-                        current_state = STATE_APPROACH
-                        logger.info(f"距离 {observation['target_distance']:.1f}m，切换到接近模式")
-                    else:
-                        command = controller.track(observation)
-                        logger.info(f"追踪中: score={observation['score']:.2f}, "
-                                   f"offset_x={observation['target_offset_x']:.1f}, "
-                                   f"distance={observation['target_distance']:.1f}m")
+                command = controller.track(observation)
+                x = command.get('x', 0.0)
+                w = command.get('w', 0.0)
+                logger.info(f"追踪中: score={observation['score']:.2f}, "
+                           f"offset_x={observation['target_offset_x']:.1f}, "
+                           f"distance={observation['target_distance']:.1f}m, "
+                           f"speed_x={x:.3f}, speed_w={w:.3f}")
             
             elif current_state == STATE_APPROACH:
-                if not results:
-                    current_state = STATE_SEARCH
-                    search_start_time = time.time()
-                    logger.info("目标丢失，切换到搜索模式")
-                else:
-                    command = controller.approach(observation)
-                    if command.get('done', False):
-                        current_state = STATE_STOP
-                        controller.stop()
-                        logger.info("到达目标位置，停止运动")
-                    else:
-                        logger.info(f"接近中: distance={observation['target_distance']:.1f}m, "
-                                   f"angle_done={command.get('angle_done', False)}, "
-                                   f"distance_done={command.get('distance_done', False)}")
+                command = controller.approach(observation)
+                x = command.get('x', 0.0)
+                w = command.get('w', 0.0)
+                logger.info(f"接近中: offset_x={observation['target_offset_x']:.1f}, "
+                           f"distance={observation['target_distance']:.1f}m, "
+                           f"speed_x={x:.3f}, speed_w={w:.3f}")
             
-            elif current_state == STATE_STOP:
-                if not results:
-                    current_state = STATE_SEARCH
-                    search_start_time = time.time()
-                    logger.info("目标丢失，切换到搜索模式")
+            elif current_state == STATE_HOLD:
+                controller.stop()
+                logger.info(f"保持中")
             
-            display_frame = draw_tracking_info(frame, results, observation)
-            display_frame = cv2.putText(display_frame, f"State: {current_state.upper()}", 
-                                       (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
-            cv2.imshow('Tennis Tracking', display_frame)
-            
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                logger.info("用户按下 'q' 键，退出程序")
-                break
+            if config.system.display_enabled and frame_count % config.system.display_interval == 0:
+                display_frame = draw_tracking_info(frame, results, observation, config)
+                display_frame = cv2.putText(display_frame, f"State: {current_state.upper()}", 
+                                           (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+                cv2.imshow('Tennis Tracking', display_frame)
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
+                    logger.info("用户按下 'q' 键，退出程序")
+                    running = False
             
             elapsed = time.time() - frame_start_time
             if elapsed < 0.033:
@@ -301,7 +396,8 @@ def main():
         if base:
             base.cleanup()
         
-        cv2.destroyAllWindows()
+        if config.system.display_enabled:
+            cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

@@ -12,6 +12,8 @@ class SystemConfig:
     debug_mode: bool
     hardware_timeout: float
     max_retries: int
+    display_enabled: bool
+    display_interval: int
 
 @dataclass
 class TaskConfig:
@@ -41,6 +43,7 @@ class ControlConfig:
     max_speed: int
     min_speed_ratio: int
     idle_speed: int
+    search_rotation_speed: float
 
 @dataclass
 class MotorConfig:
@@ -200,7 +203,9 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
             log_level=common['SYSTEM']['LOG_LEVEL'],
             debug_mode=common['SYSTEM']['DEBUG_MODE'],
             hardware_timeout=common['SYSTEM']['HARDWARE_TIMEOUT'],
-            max_retries=common['SYSTEM']['MAX_RETRIES']
+            max_retries=common['SYSTEM']['MAX_RETRIES'],
+            display_enabled=common['SYSTEM'].get('DISPLAY_ENABLED', False),
+            display_interval=common['SYSTEM'].get('DISPLAY_INTERVAL', 5)
         ),
         task=TaskConfig(
             search_timeout=common['TASK']['SEARCH_TIMEOUT'],
@@ -223,7 +228,8 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
             wheel_base=common['CONTROL']['WHEEL_BASE'],
             max_speed=common['CONTROL']['MAX_SPEED'],
             min_speed_ratio=common['CONTROL']['MIN_SPEED_RATIO'],
-            idle_speed=common['CONTROL']['IDLE_SPEED']
+            idle_speed=common['CONTROL']['IDLE_SPEED'],
+            search_rotation_speed=common['CONTROL']['SEARCH_ROTATION_SPEED']
         ),
         device=DeviceConfig(
             hardware=HardwareConfig(
