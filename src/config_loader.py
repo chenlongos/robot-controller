@@ -100,6 +100,11 @@ class ArmConfig:
     servo_ids: List[int]
     max_speed: float
     home_position: List[float]
+    port: Optional[str] = None
+    baudrate: Optional[int] = None
+    use_degrees: Optional[bool] = None
+    disable_torque_on_disconnect: Optional[bool] = None
+    max_relative_target: Optional[float] = None
 
 @dataclass
 class HardwareConfig:
@@ -195,7 +200,12 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
             type=arm_data.get('TYPE', 'unknown'),
             servo_ids=arm_data.get('SERVO_IDS', []),
             max_speed=arm_data.get('MAX_SPEED', 1.0),
-            home_position=arm_data.get('HOME_POSITION', [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            home_position=arm_data.get('HOME_POSITION', [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            port=arm_data.get('PORT', None),
+            baudrate=arm_data.get('BAUDRATE', None),
+            use_degrees=arm_data.get('USE_DEGREES', None),
+            disable_torque_on_disconnect=arm_data.get('DISABLE_TORQUE_ON_DISCONNECT', None),
+            max_relative_target=arm_data.get('MAX_RELATIVE_TARGET', None)
         )
     
     return RobotConfig(

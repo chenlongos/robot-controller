@@ -1,5 +1,5 @@
 # config/robots/aka00v4-rk3576.yaml
-# AKA-00V4-RK3576机器人特定配置（ESP32-C3 TT底盘，无机械臂）
+# AKA-00V4-RK3576机器人特定配置（ESP32-C3 TT底盘，ZP10S机械臂）
 
 HARDWARE:
   MODE: "rk3576"
@@ -24,6 +24,11 @@ HARDWARE:
     DEVICE_ID: 0
     RESOLUTION: [640, 480]
     FRAME_RATE: 30
+
+  ARM:
+    TYPE: "zp10s"
+    PORT: "/dev/ttyS7"
+    BAUDRATE: 115200
 
 # 视觉参数
 VISION:
