@@ -2,6 +2,10 @@
 import sys
 import os
 import signal
+import json
+import asyncio
+import threading
+import fractions
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -15,7 +19,64 @@ import src.base
 from src.config_loader import load_config
 from src.camera.usb_camera import USBCamera
 
+from aiohttp import web
+from aiortc import (
+    MediaStreamTrack,
+    RTCPeerConnection,
+    RTCRtpSender,
+    RTCSessionDescription,
+)
+from aiortc.contrib.media import MediaRelay
+from av import VideoFrame
+
 running = True
+pcs = set()
+relay = None
+video_track = None
+
+class VideoTransformTrack(MediaStreamTrack):
+    kind = "video"
+
+    def __init__(self, track):
+        super().__init__()
+        self.track = track
+
+    async def recv(self):
+        frame = await self.track.recv()
+        return frame
+
+
+class OpenCVVideoTrack(MediaStreamTrack):
+    kind = "video"
+
+    def __init__(self):
+        super().__init__()
+        self.frame_queue = asyncio.Queue(maxsize=5)
+        self._start_time = time.time()
+        self._frame_count = 0
+        self._fps = 30
+
+    async def recv(self):
+        frame = await self.frame_queue.get()
+        return frame
+
+    def push_frame(self, cv_frame):
+        self._frame_count += 1
+        
+        frame = VideoFrame.from_ndarray(cv_frame, format="bgr24")
+        frame.pts = int((time.time() - self._start_time) * 1e6)
+        frame.time_base = fractions.Fraction(1, 1000000)
+        
+        try:
+            if self.frame_queue.full():
+                try:
+                    self.frame_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+            self.frame_queue.put_nowait(frame)
+        except asyncio.QueueFull:
+            pass
+
 
 def signal_handler(signum, frame):
     global running
@@ -181,40 +242,24 @@ def draw_tracking_info(frame: cv2.Mat, detections: list, observation: dict, conf
     frame_copy = frame.copy()
     height, width = frame_copy.shape[:2]
     
-    cv2.line(frame_copy, (int(width/2), 0), (int(width/2), height), (0, 255, 0), 2)
-    cv2.line(frame_copy, (0, int(height/2)), (width, int(height/2)), (0, 255, 0), 2)
-    
-    stop_box_size = config.vision.tennis_width_near
-    stop_box_x1 = int(width/2 - stop_box_size/2)
-    stop_box_y1 = int(height/2 - stop_box_size/2)
-    stop_box_x2 = int(width/2 + stop_box_size/2)
-    stop_box_y2 = int(height/2 + stop_box_size/2)
-    
-    cv2.rectangle(frame_copy, (stop_box_x1, stop_box_y1), (stop_box_x2, stop_box_y2), 
-                  (0, 255, 255), 2, cv2.LINE_AA)
-    cv2.putText(frame_copy, "STOP", (stop_box_x1, stop_box_y1 - 10), 
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
-    
     if detections:
         best_detection = max(detections, key=lambda d: d.get('score', 0))
         x, y, w, h = best_detection['x'], best_detection['y'], best_detection['w'], best_detection['h']
-        score = best_detection.get('score', 0)
         
         cv2.rectangle(frame_copy, (x, y), (x + w, y + h), (0, 0, 255), 2)
-        cv2.putText(frame_copy, f"Tennis {score:.2f}", (x, y - 10), 
+        
+        distance = observation.get("target_distance", float('inf'))
+        cv2.putText(frame_copy, f"Distance: {distance:.1f}m", (x, y - 10), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
         
         center_x = int(x + w / 2)
         center_y = int(y + h / 2)
         cv2.circle(frame_copy, (center_x, center_y), 5, (0, 255, 0), -1)
         
-        cv2.arrowedLine(frame_copy, (int(width/2), int(height/2)), 
-                        (center_x, center_y), (255, 0, 0), 2)
-    
     offset_x = observation.get("target_offset_x", 0)
     distance = observation.get("target_distance", float('inf'))
     
-    status_text = f"Offset X: {offset_x:.1f} | Distance: {distance:.1f}"
+    status_text = f"Offset X: {offset_x:.1f} | Distance: {distance:.1f}m"
     cv2.putText(frame_copy, status_text, (10, height - 30), 
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
     
@@ -226,9 +271,101 @@ def draw_tracking_info(frame: cv2.Mat, detections: list, observation: dict, conf
     return frame_copy
 
 
+ROOT = os.path.dirname(__file__)
+
+
+async def index(request: web.Request) -> web.Response:
+    content = open(os.path.join(ROOT, "tennis_client.html"), "r").read()
+    return web.Response(content_type="text/html", text=content)
+
+
+async def javascript(request: web.Request) -> web.Response:
+    content = open(os.path.join(ROOT, "tennis_client.js"), "r").read()
+    return web.Response(content_type="application/javascript", text=content)
+
+
+def force_codec(pc: RTCPeerConnection, sender: RTCRtpSender, forced_codec: str) -> None:
+    kind = forced_codec.split("/")[0]
+    codecs = RTCRtpSender.getCapabilities(kind).codecs
+    transceiver = next(t for t in pc.getTransceivers() if t.sender == sender)
+    transceiver.setCodecPreferences(
+        [codec for codec in codecs if codec.mimeType == forced_codec]
+    )
+
+
+async def offer(request: web.Request) -> web.Response:
+    global relay, video_track
+    params = await request.json()
+    offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
+
+    pc = RTCPeerConnection()
+    pcs.add(pc)
+
+    @pc.on("connectionstatechange")
+    async def on_connectionstatechange() -> None:
+        logger.info("Connection state is %s" % pc.connectionState)
+        if pc.connectionState == "failed":
+            await pc.close()
+            pcs.discard(pc)
+
+    if video_track is None:
+        video_track = OpenCVVideoTrack()
+
+    if relay is None:
+        relay = MediaRelay()
+
+    video = relay.subscribe(video_track)
+
+    if video:
+        video_sender = pc.addTrack(video)
+        force_codec(pc, video_sender, "video/H264")
+
+    await pc.setRemoteDescription(offer)
+
+    answer = await pc.createAnswer()
+    await pc.setLocalDescription(answer)
+
+    return web.Response(
+        content_type="application/json",
+        text=json.dumps(
+            {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
+        ),
+    )
+
+
+async def on_shutdown(app: web.Application) -> None:
+    coros = [pc.close() for pc in pcs]
+    await asyncio.gather(*coros)
+    pcs.clear()
+
+
+def start_webrtc_server(port: int = 8080):
+    async def run_server():
+        app = web.Application()
+        app.on_shutdown.append(on_shutdown)
+        app.router.add_get("/", index)
+        app.router.add_get("/tennis_client.js", javascript)
+        app.router.add_post("/offer", offer)
+
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", port)
+        await site.start()
+        logger.info(f"WebRTC server started on port {port}")
+
+        while running:
+            await asyncio.sleep(1)
+
+        await runner.cleanup()
+
+    loop = asyncio.new_event_loop()
+    threading.Thread(target=loop.run_forever, daemon=True).start()
+    asyncio.run_coroutine_threadsafe(run_server(), loop)
+
+
 def main():
     """主程序入口"""
-    global running
+    global running, video_track
     robot_name = "aka00v4-rk3576"
     config = load_config(robot_name=robot_name)
     
@@ -270,7 +407,7 @@ def main():
             'max_speed': base_config.max_linear_speed * 0.75,
             'target_x': 0.0,
             'threshold_x': 10.0,
-            'target_distance': 0.3,
+            'target_distance': 0.2,
             'threshold_d': 0.01,
             'approach_kp': 0.6,
             'approach_ki': 0.01,
@@ -280,11 +417,12 @@ def main():
         
         controller = BaseController(base, controller_config)
         
+        logger.info("启动 WebRTC 服务器...")
+        start_webrtc_server(port=8080)
+        
         logger.info("网球追踪系统已启动")
-        if config.system.display_enabled:
-            logger.info("按 'q' 键退出")
-        else:
-            logger.info("按 Ctrl+C 退出")
+        logger.info("WebRTC 推流地址: http://<机器人IP>:8080")
+        logger.info("按 Ctrl+C 退出")
         
         frame_count = 0
         total_detections = 0
@@ -297,6 +435,9 @@ def main():
         
         current_state = STATE_SEARCH
         search_start_time = time.time()
+        
+        stream_frame_interval = 1.0 / 15.0
+        last_stream_time = time.time()
         
         while running:
             frame_start_time = time.time()
@@ -357,15 +498,16 @@ def main():
                 controller.stop()
                 logger.info(f"保持中")
             
-            if config.system.display_enabled and frame_count % config.system.display_interval == 0:
+            current_time = time.time()
+            if current_time - last_stream_time >= stream_frame_interval:
                 display_frame = draw_tracking_info(frame, results, observation, config)
                 display_frame = cv2.putText(display_frame, f"State: {current_state.upper()}", 
                                            (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
-                cv2.imshow('Tennis Tracking', display_frame)
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord('q'):
-                    logger.info("用户按下 'q' 键，退出程序")
-                    running = False
+                
+                if video_track:
+                    video_track.push_frame(display_frame)
+                
+                last_stream_time = current_time
             
             elapsed = time.time() - frame_start_time
             if elapsed < 0.033:
@@ -395,9 +537,6 @@ def main():
         
         if base:
             base.cleanup()
-        
-        if config.system.display_enabled:
-            cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
