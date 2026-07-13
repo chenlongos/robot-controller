@@ -33,6 +33,12 @@ def _register_default_arms():
         ArmFactory.register_arm("so101", SO101Arm)
     except ImportError:
         pass
+    
+    try:
+        from src.arm.zp10s_arm import ZP10SArm
+        ArmFactory.register_arm("zp10s", ZP10SArm)
+    except ImportError:
+        pass
 
 
 _register_default_arms()

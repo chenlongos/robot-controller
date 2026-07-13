@@ -359,7 +359,43 @@ class VisionModule:
                     boxes.append(box)
         
         return boxes
-    
+
+    def get_bucket_local(self, frame, color="red") -> List[Dict]:
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        
+        if color == "red":
+            lower_red1 = np.array([0, 80, 50])
+            upper_red1 = np.array([10, 255, 255])
+            lower_red2 = np.array([170, 80, 50])
+            upper_red2 = np.array([180, 255, 255])
+
+            mask = (
+                    cv2.inRange(hsv, lower_red1, upper_red1)
+                    | cv2.inRange(hsv, lower_red2, upper_red2)
+            )
+        elif color == "blue":
+            lower_blue = np.array([90, 80, 50])
+            upper_blue = np.array([130, 255, 255])
+
+            mask = cv2.inRange(hsv, lower_blue, upper_blue)
+            
+        else:
+            raise ValueError(f"Invalid color: {color}")
+
+        num_labels, _labels, stats, _centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
+
+        boxes = []
+        for i in range(1, num_labels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            if area > 1000:
+                x = int(stats[i, cv2.CC_STAT_LEFT])
+                y = int(stats[i, cv2.CC_STAT_TOP])
+                w = int(stats[i, cv2.CC_STAT_WIDTH])
+                h = int(stats[i, cv2.CC_STAT_HEIGHT])
+                boxes.append({"x": x, "y": y, "w": w, "h": h})
+
+        return boxes
+
     def release(self):
         """释放模型资源"""
         if (self.hardware_mode == 'rk3588' or self.hardware_mode == 'rk3576') and self.rknn is not None:

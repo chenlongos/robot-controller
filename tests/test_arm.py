@@ -1,7 +1,6 @@
 """机械臂测试程序"""
 import sys
 import os
-import time
 import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -14,7 +13,6 @@ def create_arm(config) -> object:
     arm_config = config.device.hardware.arm
     
     arm_type = arm_config.type
-    logger.info(f"机械臂类型: {arm_type}")
     
     if arm_type == "zp10s":
         from src.arm.zp10s_arm import ZP10SArm
@@ -39,7 +37,6 @@ def create_arm(config) -> object:
 
 def test_arm(robot_name: str):
     """测试机械臂"""
-    global logger
     import logging
     
     logging.basicConfig(
@@ -59,19 +56,65 @@ def test_arm(robot_name: str):
         logger.info("连接机械臂...")
         arm.connect()
         
-        logger.info("执行抓取动作...")
-        arm.grab()
-        logger.info("抓取完成")
+        logger.info("进入交互式测试模式，输入 exit 退出")
         
-        time.sleep(2)
+        all_joints = list(arm.JOINT_NAMES) + ["gripper"]
         
-        logger.info("执行释放动作...")
-        arm.release()
-        logger.info("释放完成")
-        
-        time.sleep(1)
-        
-        logger.info("测试完成")
+        while True:
+            print("\n" + "="*50)
+            
+            joint_positions = arm.get_joint_positions()
+            gripper_position = arm.get_gripper_position()
+            
+            print("当前关节位置:")
+            for name, pos in zip(arm.JOINT_NAMES, joint_positions):
+                print(f"  {name}: {pos}")
+            print(f"  gripper: {gripper_position}")
+            
+            print("\n可用关节:")
+            for i, joint in enumerate(all_joints):
+                print(f"  {i+1}. {joint}")
+            
+            user_input = input("\n请输入要操作的关节编号和目标位置（格式: 编号 位置，或输入 exit 退出）: ")
+            
+            if user_input.strip().lower() == "exit":
+                logger.info("退出测试")
+                break
+            
+            try:
+                parts = user_input.strip().split()
+                if len(parts) != 2:
+                    print("错误: 请输入格式为 '编号 位置'")
+                    continue
+                
+                joint_index = int(parts[0]) - 1
+                target_position = float(parts[1])
+                
+                if joint_index < 0 or joint_index >= len(all_joints):
+                    print(f"错误: 关节编号必须在 1-{len(all_joints)} 之间")
+                    continue
+                
+                selected_joint = all_joints[joint_index]
+                
+                if selected_joint == "gripper":
+                    if target_position < 0 or target_position > 100:
+                        print("错误: 夹爪位置必须在 0-100 之间")
+                        continue
+                    print(f"设置夹爪位置: {target_position}")
+                    arm.set_gripper_position(target_position)
+                else:
+                    joint_positions = list(arm.get_joint_positions())
+                    joint_idx_in_list = arm.JOINT_NAMES.index(selected_joint)
+                    joint_positions[joint_idx_in_list] = target_position
+                    print(f"设置关节 {selected_joint} 位置: {target_position}")
+                    arm.move_to_joint_positions(joint_positions)
+                
+                print("移动完成")
+                
+            except ValueError as e:
+                print(f"错误: {e}")
+            except Exception as e:
+                print(f"操作失败: {e}")
         
     except Exception as e:
         logger.error(f"测试失败: {e}", exc_info=True)

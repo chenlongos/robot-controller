@@ -3,7 +3,7 @@
 
 import logging
 import time
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 from src.abstract.arm_interface import ArmInterface
 
@@ -32,16 +32,17 @@ class SO101Arm(ArmInterface):
     - wrist_flex: 腕部弯曲
     - wrist_roll: 腕部旋转
     - gripper: 夹爪
+    
+    硬件层仅提供关节级控制，笛卡尔坐标移动等高级控制由上层实现。
     """
     
-    JOINT_NAMES = [
+    JOINT_NAMES: Tuple[str, ...] = (
         "shoulder_pan",
         "shoulder_lift", 
         "elbow_flex",
         "wrist_flex",
         "wrist_roll",
-        "gripper"
-    ]
+    )
     
     def __init__(self, config: Dict):
         """
@@ -87,7 +88,11 @@ class SO101Arm(ArmInterface):
         return self._is_connected and self.bus.is_connected
     
     def connect(self, calibrate: bool = True) -> None:
-        """连接机械臂"""
+        """连接机械臂
+        
+        Args:
+            calibrate: 是否执行校准 (默认: True)
+        """
         if self.is_connected:
             logger.warning("SO101 Arm already connected")
             return
@@ -160,15 +165,16 @@ class SO101Arm(ArmInterface):
     def move_to_joint_positions(self, positions: List[float]) -> None:
         """移动到关节位置
         
-        :param positions: 六个关节的目标位置列表
-                         [shoulder_pan, shoulder_lift, elbow_flex, 
-                          wrist_flex, wrist_roll, gripper]
+        Args:
+            positions: 五个关节的目标位置列表
+                       [shoulder_pan, shoulder_lift, elbow_flex, 
+                        wrist_flex, wrist_roll]
         """
         if not self.is_connected:
             raise RuntimeError("SO101 Arm not connected")
         
-        if len(positions) != 6:
-            raise ValueError("Expected 6 joint positions")
+        if len(positions) != len(self.JOINT_NAMES):
+            raise ValueError(f"Expected {len(self.JOINT_NAMES)} joint positions")
         
         goal_pos = dict(zip(self.JOINT_NAMES, positions))
         
@@ -187,36 +193,23 @@ class SO101Arm(ArmInterface):
         time.sleep(0.05)
         self._is_moving = False
     
-    def move_to_cartesian(self, x: float, y: float, z: float) -> None:
-        """移动到笛卡尔坐标
+    def get_joint_positions(self) -> List[float]:
+        """获取当前关节位置
         
-        注意：此方法需要逆运动学求解，当前实现为占位符
-        
-        :param x: X坐标
-        :param y: Y坐标
-        :param z: Z坐标
+        Returns:
+            五个关节的位置列表
         """
         if not self.is_connected:
             raise RuntimeError("SO101 Arm not connected")
         
-        logger.warning("move_to_cartesian requires inverse kinematics, "
-                      "which is not yet implemented. Using default position.")
-        
-        default_positions = [0.0, -30.0, 90.0, -60.0, 0.0, 50.0] if self.use_degrees else [0.0, -0.3, 0.5, -0.3, 0.0, 50.0]
-        self.move_to_joint_positions(default_positions)
-    
-    def get_joint_positions(self) -> List[float]:
-        """获取当前关节位置"""
-        if not self.is_connected:
-            raise RuntimeError("SO101 Arm not connected")
-        
         positions = self.bus.sync_read("Present_Position")
-        return [positions.get(joint, 0.0) for joint in self.JOINT_NAMES[:-1]]
+        return [positions.get(joint, 0.0) for joint in self.JOINT_NAMES]
     
     def set_gripper_position(self, position: float) -> None:
         """设置夹爪位置
         
-        :param position: 夹爪位置 (0-100, 0为闭合，100为张开)
+        Args:
+            position: 夹爪位置 (0-100, 0为闭合，100为张开)
         """
         if not self.is_connected:
             raise RuntimeError("SO101 Arm not connected")
@@ -225,7 +218,11 @@ class SO101Arm(ArmInterface):
         self.bus.sync_write("Goal_Position", {"gripper": clamped_position})
     
     def get_gripper_position(self) -> float:
-        """获取夹爪位置"""
+        """获取夹爪位置
+        
+        Returns:
+            夹爪位置 (0-100)
+        """
         if not self.is_connected:
             raise RuntimeError("SO101 Arm not connected")
         

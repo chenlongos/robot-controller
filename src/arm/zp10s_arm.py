@@ -5,7 +5,7 @@ import logging
 import time
 import json
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 from src.abstract.arm_interface import ArmInterface
 
@@ -37,13 +37,14 @@ class ZP10SArm(ArmInterface):
     - servo0: 底座旋转
     - servo1: 手臂升降
     - servo2: 夹爪
+    
+    硬件层仅提供关节级控制，抓取动作等高级控制由上层实现。
     """
     
-    JOINT_NAMES = [
+    JOINT_NAMES: Tuple[str, ...] = (
         "servo0",
         "servo1",
-        "servo2"
-    ]
+    )
     
     def __init__(self, config: Dict):
         """
@@ -64,6 +65,9 @@ class ZP10SArm(ArmInterface):
         self._is_connected = False
         self._is_moving = False
         
+        self._last_joint_positions = [180.0, 180.0]
+        self._last_gripper_position = 50.0
+        
         self.ser = None
         logger.info("ZP10S Arm initialized")
     
@@ -83,8 +87,12 @@ class ZP10SArm(ArmInterface):
         """检查机械臂是否已连接"""
         return self._is_connected and self.ser is not None and self.ser.is_open
     
-    def connect(self) -> None:
-        """连接机械臂"""
+    def connect(self, calibrate: bool = True) -> None:
+        """连接机械臂
+        
+        Args:
+            calibrate: 是否执行校准 (默认: True，ZP10S不使用校准)
+        """
         if self.is_connected:
             logger.warning("ZP10S Arm already connected")
             return
@@ -122,7 +130,7 @@ class ZP10SArm(ArmInterface):
     
     def _send_cmd(self, servo_id: int, cmd: str) -> None:
         """发送指令"""
-        cmd_str = f"#{servo_id:03d}{cmd}"
+        cmd_str = f"#{servo_id:03d}{cmd}!"
         self.ser.write(cmd_str.encode('ascii'))
         self.ser.flush()
     
@@ -137,8 +145,9 @@ class ZP10SArm(ArmInterface):
     def set_angle(self, servo_id: int, angle: float) -> None:
         """设置单个舵机角度
         
-        :param servo_id: 舵机ID (0-2)
-        :param angle: 角度 (0-270)
+        Args:
+            servo_id: 舵机ID (0-2)
+            angle: 角度 (0-270)
         """
         if not self.is_connected:
             raise RuntimeError("ZP10S Arm not connected")
@@ -151,57 +160,47 @@ class ZP10SArm(ArmInterface):
     def move_to_joint_positions(self, positions: List[float]) -> None:
         """移动到关节位置
         
-        :param positions: 三个关节的目标位置列表 [servo0, servo1, servo2]
+        Args:
+            positions: 两个关节的目标位置列表 [servo0, servo1]
         """
         if not self.is_connected:
             raise RuntimeError("ZP10S Arm not connected")
         
-        if len(positions) != 3:
-            raise ValueError("Expected 3 joint positions")
+        if len(positions) != len(self.JOINT_NAMES):
+            raise ValueError(f"Expected {len(self.JOINT_NAMES)} joint positions")
         
         self._is_moving = True
         
         for i, pos in enumerate(positions):
             self.set_angle(i, pos)
         
+        self._last_joint_positions = list(positions)
+        
         time.sleep(0.05)
         self._is_moving = False
     
-    def move_to_cartesian(self, x: float, y: float, z: float) -> None:
-        """移动到笛卡尔坐标
+    def get_joint_positions(self) -> List[float]:
+        """获取当前关节位置
         
-        注意：此方法需要逆运动学求解，当前实现为占位符
-        
-        :param x: X坐标
-        :param y: Y坐标
-        :param z: Z坐标
+        Returns:
+            两个关节的位置列表
         """
         if not self.is_connected:
             raise RuntimeError("ZP10S Arm not connected")
         
-        logger.warning("move_to_cartesian requires inverse kinematics, "
-                      "which is not yet implemented. Using default position.")
-        
-        default_positions = [245.0, 180.0, 150.0]
-        self.move_to_joint_positions(default_positions)
-    
-    def get_joint_positions(self) -> List[float]:
-        """获取当前关节位置"""
-        if not self.is_connected:
-            raise RuntimeError("ZP10S Arm not connected")
-        
-        logger.warning("get_joint_positions not implemented for ZP10S")
-        return [0.0, 0.0, 0.0]
+        return self._last_joint_positions.copy()
     
     def set_gripper_position(self, position: float) -> None:
         """设置夹爪位置
         
-        :param position: 夹爪位置 (0为闭合，100为张开)
+        Args:
+            position: 夹爪位置 (0-100, 0为闭合，100为张开)
         """
         if not self.is_connected:
             raise RuntimeError("ZP10S Arm not connected")
         
         clamped_position = max(0.0, min(100.0, position))
+        self._last_gripper_position = clamped_position
         
         if clamped_position >= 50:
             angle = self.id2_angle_open
@@ -211,12 +210,15 @@ class ZP10SArm(ArmInterface):
         self.set_angle(2, angle)
     
     def get_gripper_position(self) -> float:
-        """获取夹爪位置"""
+        """获取夹爪位置
+        
+        Returns:
+            夹爪位置 (0-100)
+        """
         if not self.is_connected:
             raise RuntimeError("ZP10S Arm not connected")
         
-        logger.warning("get_gripper_position not implemented for ZP10S")
-        return 50.0
+        return self._last_gripper_position
     
     def is_moving(self) -> bool:
         """检查是否正在移动"""
@@ -235,35 +237,10 @@ class ZP10SArm(ArmInterface):
         
         self.stop()
         
+        self.release_torque()
+        
         if self.ser.is_open:
             self.ser.close()
         
         self._is_connected = False
         logger.info("ZP10S Arm disconnected")
-    
-    def grab(self) -> None:
-        """执行抓取动作"""
-        if not self.is_connected:
-            raise RuntimeError("ZP10S Arm not connected")
-        
-        self.set_angle(2, self.id2_angle_open)
-        time.sleep(0.5)
-        
-        self.set_angle(0, self._angle("servo0_prepare", 245))
-        self.set_angle(1, self._angle("servo1_prepare", 180))
-        self.set_angle(2, self._angle("servo2_approach", 150))
-        time.sleep(1)
-        
-        self.set_angle(2, self.id2_angle_close)
-        time.sleep(2)
-        
-        self.set_angle(0, self._angle("servo0_lift", 200))
-        self.set_angle(1, self._angle("servo1_lift", 180))
-        self.set_angle(2, self._angle("servo2_lift", 90))
-    
-    def release(self) -> None:
-        """执行释放动作"""
-        if not self.is_connected:
-            raise RuntimeError("ZP10S Arm not connected")
-        
-        self.set_angle(2, self.id2_angle_open)
