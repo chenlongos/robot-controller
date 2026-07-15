@@ -8,6 +8,7 @@ from dataclasses import dataclass
 @dataclass
 class SystemConfig:
     """系统配置"""
+    robot_id: str
     log_level: str
     debug_mode: bool
     hardware_timeout: float
@@ -34,15 +35,35 @@ class VisionConfig:
     tennis_width_far: int
     tennis_width_near: int
 
+
+@dataclass
+class StateMachineConfig:
+    """状态机参数配置"""
+    target_x: float
+    target_distance: float
+    threshold_x: float
+    threshold_d: float
+    grip_threshold: int
+    reach_count_threshold: int
+    bucket_edge_threshold: int
+
 @dataclass
 class ControlConfig:
     """控制参数配置"""
     kp_dist: float
     kp_angle: float
     wheel_base: float
-    max_speed: int
-    min_speed_ratio: int
-    idle_speed: int
+    max_speed: float
+    max_linear_speed: float
+    approach_threshold: float
+    target_x: float
+    threshold_x: float
+    target_distance: float
+    threshold_d: float
+    approach_kp: float
+    approach_ki: float
+    approach_kd: float
+    approach_kp_angle: float
     search_rotation_speed: float
 
 @dataclass
@@ -133,6 +154,7 @@ class RobotConfig:
     task: TaskConfig
     vision: VisionConfig
     control: ControlConfig
+    statemachine: StateMachineConfig
     device: DeviceConfig
 
 def load_yaml_file(file_path: str) -> Dict[str, Any]:
@@ -210,6 +232,7 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
     
     return RobotConfig(
         system=SystemConfig(
+            robot_id=common['SYSTEM']['ROBOT_ID'],
             log_level=common['SYSTEM']['LOG_LEVEL'],
             debug_mode=common['SYSTEM']['DEBUG_MODE'],
             hardware_timeout=common['SYSTEM']['HARDWARE_TIMEOUT'],
@@ -233,13 +256,30 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
             tennis_width_near=robot['VISION']['TENNIS_WIDTH_NEAR']
         ),
         control=ControlConfig(
-            kp_dist=common['CONTROL']['KP_DIST'],
-            kp_angle=common['CONTROL']['KP_ANGLE'],
-            wheel_base=common['CONTROL']['WHEEL_BASE'],
-            max_speed=common['CONTROL']['MAX_SPEED'],
-            min_speed_ratio=common['CONTROL']['MIN_SPEED_RATIO'],
-            idle_speed=common['CONTROL']['IDLE_SPEED'],
-            search_rotation_speed=common['CONTROL']['SEARCH_ROTATION_SPEED']
+            kp_dist=base_data.get('CONTROL', {}).get('KP_DIST', 0.8),
+            kp_angle=base_data.get('CONTROL', {}).get('KP_ANGLE', 0.005),
+            wheel_base=base_data.get('WHEEL_BASE', 0.2),
+            max_speed=base_data.get('CONTROL', {}).get('MAX_SPEED', 0.3),
+            max_linear_speed=base_data.get('CONTROL', {}).get('MAX_LINEAR_SPEED', 0.4),
+            approach_threshold=base_data.get('CONTROL', {}).get('APPROACH_THRESHOLD', 0.9),
+            target_x=base_data.get('CONTROL', {}).get('TARGET_X', 0.0),
+            threshold_x=base_data.get('CONTROL', {}).get('THRESHOLD_X', 10.0),
+            target_distance=base_data.get('CONTROL', {}).get('TARGET_DISTANCE', 0.2),
+            threshold_d=base_data.get('CONTROL', {}).get('THRESHOLD_D', 0.01),
+            approach_kp=base_data.get('CONTROL', {}).get('APPROACH_KP', 0.6),
+            approach_ki=base_data.get('CONTROL', {}).get('APPROACH_KI', 0.01),
+            approach_kd=base_data.get('CONTROL', {}).get('APPROACH_KD', 0.01),
+            approach_kp_angle=base_data.get('CONTROL', {}).get('APPROACH_KP_ANGLE', 0.002),
+            search_rotation_speed=base_data.get('CONTROL', {}).get('SEARCH_ROTATION_SPEED', 0.3)
+        ),
+        statemachine=StateMachineConfig(
+            target_x=robot['STATEMACHINE'].get('TARGET_X', 0.0),
+            target_distance=robot['STATEMACHINE'].get('TARGET_DISTANCE', 0.2),
+            threshold_x=robot['STATEMACHINE'].get('THRESHOLD_X', 50.0),
+            threshold_d=robot['STATEMACHINE'].get('THRESHOLD_D', 0.01),
+            grip_threshold=robot['STATEMACHINE'].get('GRIP_THRESHOLD', 90),
+            reach_count_threshold=robot['STATEMACHINE'].get('REACH_COUNT_THRESHOLD', 10),
+            bucket_edge_threshold=robot['STATEMACHINE'].get('BUCKET_EDGE_THRESHOLD', 20)
         ),
         device=DeviceConfig(
             hardware=HardwareConfig(

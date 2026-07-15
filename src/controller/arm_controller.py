@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 class ArmController:
     """机械臂控制器"""
     
-    ACTION_SEQUENCE_FILE = "config/arm_action_sequences.json"
     ALLOWED_ACTIONS = {"origin", "pick", "put", "open_gripper", "close_gripper"}
     ALLOWED_STEP_TYPES = {"joint", "gripper", "delay"}
     
@@ -28,13 +27,14 @@ class ArmController:
         "close_gripper": []
     }
     
-    def __init__(self, arm: ArmInterface, step_delay: float = 0.5) -> None:
+    def __init__(self, arm: ArmInterface, robot_name: str = "aka00v4-rk3576", step_delay: float = 0.5) -> None:
         self.arm = arm
+        self.robot_name = robot_name
         self.step_delay = step_delay
     
     def _get_config_path(self) -> Path:
-        """获取配置文件路径"""
-        return Path(__file__).resolve().parents[2] / self.ACTION_SEQUENCE_FILE
+        """获取配置文件路径，文件名包含机器人名字"""
+        return Path(__file__).resolve().parents[2] / f"config/arm_action_sequences_{self.robot_name}.json"
     
     def _load_action_sequences(self) -> Dict[str, List[Dict]]:
         """从配置文件加载动作序列"""
@@ -145,13 +145,21 @@ class ArmController:
                 
                 if step_type == "joint":
                     positions = step.get("positions", [])
-                    logger.debug(f"移动关节位置: {positions}")
-                    self.arm.move_to_joint_positions(positions)
+                    current_positions = list(self.arm.get_joint_positions())
+                    for i, pos in enumerate(positions):
+                        if i < len(current_positions):
+                            current_positions[i] = pos
+                    logger.debug(f"移动关节位置: {current_positions}")
+                    self.arm.move_to_joint_positions(current_positions)
                 
                 elif step_type == "gripper":
-                    position = step.get("position", 0)
-                    logger.debug(f"设置夹爪位置: {position}")
-                    self.arm.set_gripper_position(position)
+                    servo2_angle = step.get("position", 0)
+                    logger.debug(f"设置夹爪位置: {servo2_angle}")
+                    
+                    positions = self.arm.get_joint_positions()
+                    positions[2] = servo2_angle
+                    logger.debug(f"转换为关节位置: {positions}")
+                    self.arm.move_to_joint_positions(positions)
                 
                 elif step_type == "delay":
                     duration = step.get("duration", 0)

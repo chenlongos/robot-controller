@@ -59,7 +59,7 @@ def test_arm_controller(robot_name: str):
         logger.info("连接机械臂...")
         arm.connect()
         
-        controller = ArmController(arm)
+        controller = ArmController(arm, robot_name=robot_name)
         
         logger.info("进入控制器测试模式，输入 exit 退出")
         
@@ -90,7 +90,7 @@ def test_arm_controller(robot_name: str):
                 print(f"\n为动作 '{action_name}' 添加步骤")
                 print("步骤类型:")
                 print("  joint - 关节位置控制，格式: positions [x1, x2, ...]")
-                print("  gripper - 夹爪控制，格式: position 0~100")
+                print("  gripper - 夹爪控制，格式: position 角度值（如90、150）")
                 print("  delay - 延时，格式: duration 秒数")
                 print("输入 'done' 完成步骤添加")
                 
@@ -123,8 +123,8 @@ def test_arm_controller(robot_name: str):
                     elif step_type == "gripper":
                         try:
                             position = float(params)
-                            if position < 0 or position > 100:
-                                raise ValueError("position必须在0-100之间")
+                            if position < 0 or position > 270:
+                                raise ValueError("position必须在0-270之间")
                             sequence.append({"type": "gripper", "position": position})
                             print(f"添加步骤: gripper position={position}")
                         except Exception as e:

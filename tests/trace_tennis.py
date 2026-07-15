@@ -222,7 +222,7 @@ def get_status(observation: dict, controller_config: dict) -> str:
     approach_threshold = controller_config.get('approach_threshold', 1.5)
     target_x = controller_config.get('target_x', 0.0)
     threshold_x = controller_config.get('threshold_x', 10.0)
-    target_distance = controller_config.get('target_distance', 0.3)
+    target_distance = controller_config.get('target_distance', 0.2)
     threshold_d = controller_config.get('threshold_d', 0.01)
     
     angle_done = (error_x >= target_x - threshold_x) and (error_x <= target_x + threshold_x)

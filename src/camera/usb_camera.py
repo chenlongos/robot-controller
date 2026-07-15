@@ -3,18 +3,29 @@
 
 import cv2
 import logging
-from typing import Dict
+from typing import Dict, Any
 
 from src.abstract.camera_interface import CameraInterface
+from src.config_loader import CameraConfig
 
 
 class USBCamera(CameraInterface):
     """USB摄像头实现"""
     
-    def __init__(self, config: Dict):
-        self.device_id = config.get('device_id', 0)
-        self.resolution = config.get('resolution', (640, 480))
-        self.frame_rate = config.get('frame_rate', 30)
+    def __init__(self, config: Any):
+        if isinstance(config, CameraConfig):
+            self.device_id = config.device_id
+            self.resolution = config.resolution
+            self.frame_rate = config.frame_rate
+        elif isinstance(config, dict):
+            self.device_id = config.get('device_id', 0)
+            self.resolution = config.get('resolution', (640, 480))
+            self.frame_rate = config.get('frame_rate', 30)
+        else:
+            self.device_id = 0
+            self.resolution = (640, 480)
+            self.frame_rate = 30
+        
         self.cap = None
         self.logger = logging.getLogger(__name__)
         

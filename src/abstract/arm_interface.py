@@ -58,15 +58,6 @@ class ArmInterface(ABC):
         pass
     
     @abstractmethod
-    def set_gripper_position(self, position: float) -> None:
-        """设置夹爪位置
-        
-        Args:
-            position: 夹爪位置 (0-100, 0为闭合，100为张开)
-        """
-        pass
-    
-    @abstractmethod
     def get_gripper_position(self) -> float:
         """获取夹爪位置
         

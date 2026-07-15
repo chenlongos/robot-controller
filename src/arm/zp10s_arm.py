@@ -3,11 +3,10 @@
 
 import logging
 import time
-import json
-from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Tuple, Any
 
 from src.abstract.arm_interface import ArmInterface
+from src.config_loader import ArmConfig
 
 try:
     import serial
@@ -17,17 +16,6 @@ except ImportError:
     serial = None
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_ZP10S_ARM_ANGLES = {
-    "servo0_prepare": 245,
-    "servo1_prepare": 180,
-    "servo2_prepare": 150,
-    "servo2_approach": 150,
-    "servo2_grab": 90,
-    "servo0_lift": 200,
-    "servo1_lift": 180,
-    "servo2_lift": 90,
-}
 
 
 class ZP10SArm(ArmInterface):
@@ -44,12 +32,13 @@ class ZP10SArm(ArmInterface):
     JOINT_NAMES: Tuple[str, ...] = (
         "servo0",
         "servo1",
+        "servo2",
     )
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Any):
         """
-        :param config: 配置字典，包含以下关键字:
-            - port: 串口端口路径 (默认: "/dev/ttyS2")
+        :param config: 配置字典或ArmConfig对象，包含以下关键字:
+            - port: 串口端口路径 (默认: "/dev/ttyS7")
             - baudrate: 波特率 (默认: 115200)
             - timeout: 超时时间 (默认: 0.1)
         """
@@ -57,30 +46,26 @@ class ZP10SArm(ArmInterface):
             raise ImportError("serial模块未安装，请先安装pyserial")
         
         self.config = config
-        self.port = config.get('port', '/dev/ttyS7')
-        self.baudrate = config.get('baudrate', 115200)
-        self.timeout = config.get('timeout', 0.1)
+        if isinstance(config, ArmConfig):
+            self.port = config.port or '/dev/ttyS7'
+            self.baudrate = config.baudrate or 115200
+            self.timeout = 0.1
+        elif isinstance(config, dict):
+            self.port = config.get('port', '/dev/ttyS7')
+            self.baudrate = config.get('baudrate', 115200)
+            self.timeout = config.get('timeout', 0.1)
+        else:
+            self.port = '/dev/ttyS7'
+            self.baudrate = 115200
+            self.timeout = 0.1
         
-        self._angles = self._load_arm_angles()
         self._is_connected = False
         self._is_moving = False
         
-        self._last_joint_positions = [180.0, 180.0]
-        self._last_gripper_position = 50.0
+        self._last_joint_positions = [180.0, 180.0, 150.0]
         
         self.ser = None
         logger.info("ZP10S Arm initialized")
-    
-    def _load_arm_angles(self) -> Dict:
-        arm_angles_path = Path(__file__).resolve().parents[2] / "arm_angles.json"
-        if arm_angles_path.exists():
-            try:
-                data = json.loads(arm_angles_path.read_text(encoding="utf-8"))
-                if isinstance(data, dict):
-                    return {**DEFAULT_ZP10S_ARM_ANGLES, **data}
-            except Exception:
-                pass
-        return DEFAULT_ZP10S_ARM_ANGLES.copy()
     
     @property
     def is_connected(self) -> bool:
@@ -109,17 +94,6 @@ class ZP10SArm(ArmInterface):
         self._is_connected = True
         logger.info("ZP10S Arm connected")
     
-    def _angle(self, key: str, default: int) -> int:
-        return self._angles.get(key, default)
-    
-    @property
-    def id2_angle_open(self) -> int:
-        return self._angle("servo2_prepare", 150)
-    
-    @property
-    def id2_angle_close(self) -> int:
-        return self._angle("servo2_grab", 90)
-    
     def _send_frame(self, servo_id: int, angle: float, duration: int = 1000) -> None:
         """发送舵机控制帧"""
         pulse = int(500 + (angle / 270.0) * 2000)
@@ -128,11 +102,30 @@ class ZP10SArm(ArmInterface):
         self.ser.write(cmd.encode('ascii'))
         self.ser.flush()
     
-    def _send_cmd(self, servo_id: int, cmd: str) -> None:
-        """发送指令"""
+    def _send_cmd(self, servo_id: int, cmd: str) -> str:
+        """发送指令并返回响应
+        
+        Args:
+            servo_id: 舵机ID，255为广播ID，无返回值
+            cmd: 命令字符串
+            
+        Returns:
+            串口返回的响应字符串，广播ID时返回空字符串
+        """
         cmd_str = f"#{servo_id:03d}{cmd}!"
         self.ser.write(cmd_str.encode('ascii'))
         self.ser.flush()
+        
+        if servo_id == 255:
+            return ""
+        
+        time.sleep(0.02)
+        
+        response = ""
+        while self.ser.in_waiting > 0:
+            response += self.ser.read(self.ser.in_waiting).decode('ascii', errors='ignore')
+        
+        return response
     
     def release_torque(self) -> None:
         """释放扭矩"""
@@ -161,7 +154,7 @@ class ZP10SArm(ArmInterface):
         """移动到关节位置
         
         Args:
-            positions: 两个关节的目标位置列表 [servo0, servo1]
+            positions: 三个关节的目标位置列表 [servo0, servo1, servo2]
         """
         if not self.is_connected:
             raise RuntimeError("ZP10S Arm not connected")
@@ -174,51 +167,53 @@ class ZP10SArm(ArmInterface):
         for i, pos in enumerate(positions):
             self.set_angle(i, pos)
         
-        self._last_joint_positions = list(positions)
-        
         time.sleep(0.05)
         self._is_moving = False
     
     def get_joint_positions(self) -> List[float]:
-        """获取当前关节位置
+        """获取当前所有关节位置
+        
+        通过发送PRAD命令读取每个舵机的PWM值，然后转换为角度。
         
         Returns:
-            两个关节的位置列表
+            三个关节的位置列表 [servo0, servo1, servo2]，单位为角度
         """
         if not self.is_connected:
             raise RuntimeError("ZP10S Arm not connected")
         
-        return self._last_joint_positions.copy()
-    
-    def set_gripper_position(self, position: float) -> None:
-        """设置夹爪位置
+        positions = []
+        for servo_id in range(3):
+            response = self._send_cmd(servo_id, "PRAD")
+            
+            pwm_value = 1500
+            if response:
+                parts = response.strip().split('P')
+                if len(parts) >= 2:
+                    pwm_part = parts[1].split('!')[0]
+                    try:
+                        pwm_value = int(pwm_part)
+                    except ValueError:
+                        pass
+            
+            angle = ((pwm_value - 500) / 2000.0) * 270.0
+            angle = max(0.0, min(270.0, angle))
+            positions.append(angle)
         
-        Args:
-            position: 夹爪位置 (0-100, 0为闭合，100为张开)
-        """
-        if not self.is_connected:
-            raise RuntimeError("ZP10S Arm not connected")
-        
-        clamped_position = max(0.0, min(100.0, position))
-        self._last_gripper_position = clamped_position
-        
-        if clamped_position >= 50:
-            angle = self.id2_angle_open
-        else:
-            angle = self.id2_angle_close
-        
-        self.set_angle(2, angle)
+        self._last_joint_positions = positions
+        return positions.copy()
     
     def get_gripper_position(self) -> float:
         """获取夹爪位置
         
         Returns:
-            夹爪位置 (0-100)
+            夹爪位置 (0-100)，基于servo2的角度计算
         """
         if not self.is_connected:
             raise RuntimeError("ZP10S Arm not connected")
         
-        return self._last_gripper_position
+        positions = self.get_joint_positions()
+        servo2_angle = positions[2]
+        return servo2_angle
     
     def is_moving(self) -> bool:
         """检查是否正在移动"""

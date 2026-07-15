@@ -205,18 +205,6 @@ class SO101Arm(ArmInterface):
         positions = self.bus.sync_read("Present_Position")
         return [positions.get(joint, 0.0) for joint in self.JOINT_NAMES]
     
-    def set_gripper_position(self, position: float) -> None:
-        """设置夹爪位置
-        
-        Args:
-            position: 夹爪位置 (0-100, 0为闭合，100为张开)
-        """
-        if not self.is_connected:
-            raise RuntimeError("SO101 Arm not connected")
-        
-        clamped_position = max(0.0, min(100.0, position))
-        self.bus.sync_write("Goal_Position", {"gripper": clamped_position})
-    
     def get_gripper_position(self) -> float:
         """获取夹爪位置
         
