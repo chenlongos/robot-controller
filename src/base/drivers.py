@@ -219,6 +219,24 @@ class Esp32C3TtDriver:
         """ESP32-C3驱动无需PID更新（PID在ESP32端运行）"""
         pass
     
+    def get_rpm(self) -> tuple:
+        """获取左右轮RPM值
+        
+        Returns:
+            tuple: (left_rpm, right_rpm)，单位为转/分钟
+        """
+        self.ser.reset_input_buffer()
+        self.ser.write(self._build_frame(CMD_GET_RPM))
+        self.ser.flush()
+        rsp = self._recv_frame(timeout=0.5)
+        if rsp and rsp["cmd"] == RSP_RPM_DATA:
+            payload = rsp["payload"]
+            if len(payload) >= 4:
+                left_rpm = struct.unpack(">h", payload[0:2])[0]
+                right_rpm = struct.unpack(">h", payload[2:4])[0]
+                return (left_rpm, right_rpm)
+        return (0, 0)
+    
     def stop(self) -> None:
         """停止电机"""
         self._send_cmd_noresp(CMD_STOP, bytes([2]))

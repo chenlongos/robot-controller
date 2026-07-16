@@ -190,6 +190,34 @@ class ArmController:
                 "steps_completed": step_count
             }
     
+    def get_joint_positions(self) -> List[float]:
+        """获取当前所有关节位置
+        
+        Returns:
+            关节位置列表，单位为角度
+        """
+        try:
+            positions = self.arm.get_joint_positions()
+            logger.debug(f"获取关节位置: {positions}")
+            return positions
+        except Exception as e:
+            logger.error(f"获取关节位置失败: {e}")
+            return []
+    
+    def get_gripper_position(self) -> float:
+        """获取夹爪位置
+        
+        Returns:
+            夹爪位置，单位为角度
+        """
+        try:
+            position = self.arm.get_gripper_position()
+            logger.debug(f"获取夹爪位置: {position}")
+            return position
+        except Exception as e:
+            logger.error(f"获取夹爪位置失败: {e}")
+            return 0.0
+    
     def stop(self) -> None:
         """停止机械臂"""
         logger.info("停止机械臂")

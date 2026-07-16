@@ -402,7 +402,40 @@ class VisionModule:
             self.rknn.release()
             self.logger.info("RKNN模型资源已释放")
     
-    def calibrate_distance(self, robot_type: str, camera: object, 
+    def draw_tracking_info(self, frame: np.ndarray, detections: list, bucket_detections: list, 
+                           state: str, observation: dict) -> np.ndarray:
+        """在图像上绘制追踪信息"""
+        frame_copy = frame.copy()
+        
+        if detections:
+            best_detection = max(detections, key=lambda d: d.get('score', 0))
+            x, y, w, h = best_detection['x'], best_detection['y'], best_detection['w'], best_detection['h']
+            
+            cv2.rectangle(frame_copy, (x, y), (x + w, y + h), (0, 0, 255), 2)
+            
+            distance = observation.get("tennis_distance", float('inf'))
+            cv2.putText(frame_copy, f"Distance: {distance:.1f}m", (x, y - 10), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            
+            center_x = int(x + w / 2)
+            center_y = int(y + h / 2)
+            cv2.circle(frame_copy, (center_x, center_y), 5, (0, 255, 0), -1)
+        
+        if bucket_detections:
+            best_detection = max(bucket_detections, key=lambda d: d.get('w', 0))
+            x, y, w, h = best_detection['x'], best_detection['y'], best_detection['w'], best_detection['h']
+            
+            cv2.rectangle(frame_copy, (x, y), (x + w, y + h), (255, 0, 0), 2)
+            cv2.putText(frame_copy, f"Bucket", (x, y - 10), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+        
+        state_text = str(state).split(".")[-1] if hasattr(state, "__class__") else str(state)
+        cv2.putText(frame_copy, f"State: {state_text}", (10, 30), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        
+        return frame_copy
+    
+    def calibrate_distance(self, robot_type: str, robot: object, 
                           distances: list = [0.2, 0.3, 0.5, 0.8, 1.0, 1.5, 2.0],
                           config_dir: str = 'config') -> bool:
         """
@@ -413,7 +446,7 @@ class VisionModule:
         
         Args:
             robot_type: 机器人类型（如 'aka01b'）
-            camera: 相机对象，需实现 capture() 方法返回帧
+            robot: 机器人对象，需实现 camera 属性和 capture() 方法返回帧
             distances: 校准距离列表（米）
             config_dir: 校准文件保存目录
             
@@ -458,7 +491,7 @@ class VisionModule:
             if user_input == 'n':
                 continue
             
-            frame = camera.capture(flush_frames=5)
+            frame = robot.camera.capture(flush_frames=5)
             if frame is None:
                 print(f"无法捕获图像，跳过 {dist} 米")
                 continue
