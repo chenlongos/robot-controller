@@ -197,6 +197,7 @@ class Esp32C3TtDriver:
         return rsp is not None and rsp["cmd"] == RSP_ACK
     
     def _send_cmd_noresp(self, cmd: int, payload: bytes = b"") -> None:
+        self.ser.reset_input_buffer()
         self.ser.write(self._build_frame(cmd, payload))
         self.ser.flush()
     
@@ -214,6 +215,7 @@ class Esp32C3TtDriver:
         
         payload = struct.pack(">hh", left_pwm, right_pwm)
         self._send_cmd_noresp(CMD_SET_SPEEDS, payload)
+        logger.debug(f"set_speeds: left={left}->{left_pwm}, right={right}->{right_pwm}, payload={payload.hex()}")
     
     def update(self, dt):
         """ESP32-C3驱动无需PID更新（PID在ESP32端运行）"""
