@@ -1,0 +1,22 @@
+robot_type: aka00v4-rk3576
+calibration_type: distance
+formula: D(cm) = M / P + C
+M: 4893.281164424221
+C: 1.468126039776603
+data_points: 5
+raw_data:
+- distance_m: 0.2
+  distance_cm: 20.0
+  pixel_size: 255
+- distance_m: 0.3
+  distance_cm: 30.0
+  pixel_size: 170
+- distance_m: 0.5
+  distance_cm: 50.0
+  pixel_size: 105
+- distance_m: 0.8
+  distance_cm: 80.0
+  pixel_size: 61
+- distance_m: 1.0
+  distance_cm: 100.0
+  pixel_size: 50

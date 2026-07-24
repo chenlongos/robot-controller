@@ -18,7 +18,6 @@ class BaseController:
                 'search_rotation_speed': config.search_rotation_speed,
                 'kp_angle': config.kp_angle,
                 'kp_dist': config.kp_dist,
-                'max_speed': config.max_speed,
                 'wheel_base': config.wheel_base,
                 'max_linear_speed': config.max_linear_speed,
                 'target_x': config.target_x,
@@ -85,7 +84,7 @@ class BaseController:
         distance = observation.get("target_distance", 1.0)
         error_x = observation.get("target_offset_x", 0.0)
         
-        max_speed = self._config_dict.get('max_speed', 0.3)
+        max_speed = self._config_dict.get('max_linear_speed', 0.4)
         target_x = self._config_dict.get('target_x', 0.0)
         target_distance = self._config_dict.get('target_distance', 0.2)
         
@@ -100,8 +99,12 @@ class BaseController:
         error_dist = distance - target_distance
         
         max_integral = max_speed / ki_dist if ki_dist > 0 else float('inf')
-        self._integral += error_dist
-        self._integral = max(-max_integral, min(max_integral, self._integral))
+        
+        if error_dist <= 0:
+            self._integral = 0.0
+        else:
+            self._integral += error_dist
+            self._integral = max(-max_integral, min(max_integral, self._integral))
         
         if self._prev_distance is not None:
             derivative = distance - self._prev_distance
@@ -111,11 +114,10 @@ class BaseController:
         
         speed = kp_dist * error_dist + ki_dist * self._integral + kd_dist * derivative
         
-        min_speed = 0.09
-        if speed > 0:
-            linear_speed = max(min_speed, min(max_speed, speed))
-        else:
-            linear_speed = min(-min_speed, max(-max_speed, speed))
+        linear_speed = max(-max_speed, min(max_speed, speed))
+        
+        if abs(linear_speed) < 0.001:
+            linear_speed = 0.0
         
         self.base.move(linear_speed, 0.0, angular_speed)
         return {"x": linear_speed, "w": angular_speed}

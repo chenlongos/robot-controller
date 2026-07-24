@@ -8,17 +8,15 @@ HARDWARE:
   BASE:
     TYPE: "differential"
     DRIVER: "esp32_c3_tt"
-    WHEEL_RADIUS: 0.042
-    WHEEL_BASE: 0.195
-    MAX_LINEAR_SPEED: 0.4
-    MAX_ANGULAR_SPEED: 1.0
+    WHEEL_RADIUS: 0.03
+    WHEEL_BASE: 0.18
     
     CONTROL:
       KP_DIST: 0.8
       KP_ANGLE: 0.005
       MAX_LINEAR_SPEED: 0.4
+      MAX_ANGULAR_SPEED: 1.0
       APPROACH_THRESHOLD: 0.9
-      MAX_SPEED: 0.3
       TARGET_X: 0.0
       THRESHOLD_X: 10.0
       TARGET_DISTANCE: 0.2

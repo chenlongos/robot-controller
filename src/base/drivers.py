@@ -126,6 +126,9 @@ class Esp32C3TtDriver:
         self.baudrate = uart_config.baudrate
         self.ppr = uart_config.ppr
         self.pwm_freq = uart_config.pwm_freq
+        self.min_pwm = getattr(uart_config, 'min_pwm', 20)
+        self.turn_threshold = getattr(uart_config, 'turn_threshold', 20)
+        self.direction_forward = getattr(uart_config, 'direction_forward', 1)
         
         self.ser = None
         self._init_serial()
@@ -207,15 +210,42 @@ class Esp32C3TtDriver:
     
     def set_speeds(self, left: int, right: int) -> None:
         """设置左右轮速度（-100~100，百分比）
-        
-        注意：由于硬件接线原因，速度值需要取反
+      
+        死区补偿策略：
+        当任一轮子PWM绝对值小于min_pwm时：
+        1. 计算速度差 diff = |left_pwm - right_pwm|
+        2. 如果 diff > turn_threshold → 旋转：保持较大速度的方向，反转较小速度的轮子
+        3. 如果 diff <= turn_threshold → 直线：两轮同向，取平均符号
         """
-        left_pwm = max(-100, min(100, -left))
-        right_pwm = max(-100, min(100, -right))
+        left_pwm = max(-100, min(100, left))
+        right_pwm = max(-100, min(100, right))
+        
+        raw_left = left_pwm
+        raw_right = right_pwm
+        
+        left_small = abs(left_pwm) < self.min_pwm
+        right_small = abs(right_pwm) < self.min_pwm
+        
+        if (left_small or right_small) and (left_pwm != 0 and right_pwm != 0):
+            diff = abs(left_pwm - right_pwm)
+            
+            if diff > self.turn_threshold:
+                left_pwm = self.min_pwm * (1 if left_pwm > right_pwm else -1)
+                right_pwm = self.min_pwm * (1 if right_pwm > left_pwm else -1)
+            else:
+                avg_sign = 1 if (left_pwm + right_pwm) >= 0 else -1
+                left_pwm = self.min_pwm * avg_sign
+                right_pwm = self.min_pwm * avg_sign
+        
+        left_pwm *= self.direction_forward
+        right_pwm *= self.direction_forward
         
         payload = struct.pack(">hh", left_pwm, right_pwm)
         self._send_cmd_noresp(CMD_SET_SPEEDS, payload)
-        logger.debug(f"set_speeds: left={left}->{left_pwm}, right={right}->{right_pwm}, payload={payload.hex()}")
+        if raw_left != left_pwm or raw_right != right_pwm:
+            logger.debug(f"set_speeds: left={left}>>{raw_left}>>{left_pwm}, right={right}>>{raw_right}>>{right_pwm}, payload={payload.hex()}")
+        else:
+            logger.debug(f"set_speeds: left={left}>>{left_pwm}, right={right}>>{right_pwm}, payload={payload.hex()}")
     
     def update(self, dt):
         """ESP32-C3驱动无需PID更新（PID在ESP32端运行）"""
@@ -228,16 +258,28 @@ class Esp32C3TtDriver:
             tuple: (left_rpm, right_rpm)，单位为转/分钟
         """
         self.ser.reset_input_buffer()
-        self.ser.write(self._build_frame(CMD_GET_RPM))
+        self.ser.write(self._build_frame(CMD_GET_RPM, bytes([2])))
         self.ser.flush()
-        rsp = self._recv_frame(timeout=0.5)
-        if rsp and rsp["cmd"] == RSP_RPM_DATA:
-            payload = rsp["payload"]
-            if len(payload) >= 4:
-                left_rpm = struct.unpack(">h", payload[0:2])[0]
-                right_rpm = struct.unpack(">h", payload[2:4])[0]
-                return (left_rpm, right_rpm)
-        return (0, 0)
+        
+        left_rpm = 0
+        right_rpm = 0
+        count = 0
+        
+        deadline = time.time() + 1.0
+        while time.time() < deadline and count < 2:
+            rsp = self._recv_frame(timeout=0.5)
+            if rsp and rsp["cmd"] == RSP_RPM_DATA:
+                payload = rsp["payload"]
+                if len(payload) >= 3:
+                    motor_id = payload[0]
+                    rpm = struct.unpack(">h", payload[1:3])[0]
+                    if motor_id == 0:
+                        left_rpm = rpm
+                    elif motor_id == 1:
+                        right_rpm = rpm
+                    count += 1
+        
+        return (left_rpm, right_rpm)
     
     def stop(self) -> None:
         """停止电机"""

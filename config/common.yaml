@@ -3,9 +3,8 @@
 
 # 系统配置
 SYSTEM:
-  ROBOT_ID: "aka00v4-rk3588"
-  LOG_LEVEL: "INFO"
-  DEBUG_MODE: false
+  ROBOT_ID: "aka00v4-rk3576"
+  LOG_LEVEL: "DEBUG"
   HARDWARE_TIMEOUT: 5.0
   MAX_RETRIES: 3
   DISPLAY_ENABLED: false

@@ -29,7 +29,8 @@ class MecanumBase(BaseInterface):
         self.vx = 0.0  # 前后速度 (m/s)
         self.vy = 0.0  # 左右速度 (m/s)
         self.vw = 0.0  # 旋转速度 (rad/s)
-        self.LOOP_TIME = 0.001
+        self.LOOP_TIME = 0.01
+        self._dirty = True
         self.running = True
         self.thread = threading.Thread(target=self._control_loop)
         self.thread.daemon = True
@@ -79,7 +80,9 @@ class MecanumBase(BaseInterface):
             bl_pwm = int((v_bl / max_rpm) * 100)
             br_pwm = int((v_br / max_rpm) * 100)
             
-            self.driver.set_speeds(fl_pwm, fr_pwm, bl_pwm, br_pwm)
+            if self._dirty:
+                self.driver.set_speeds(fl_pwm, fr_pwm, bl_pwm, br_pwm)
+                self._dirty = False
             self.driver.update(dt)
             
             time.sleep(self.LOOP_TIME)
@@ -95,12 +98,14 @@ class MecanumBase(BaseInterface):
         self.vx = max(-self.max_linear_speed, min(self.max_linear_speed, x))
         self.vy = max(-self.max_linear_speed, min(self.max_linear_speed, y))
         self.vw = max(-self.max_angular_speed, min(self.max_angular_speed, w))
+        self._dirty = True
     
     def stop(self) -> None:
         """停止运动"""
         self.vx = 0.0
         self.vy = 0.0
         self.vw = 0.0
+        self._dirty = True
         self.driver.stop()
     
     def cleanup(self) -> None:

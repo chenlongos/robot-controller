@@ -107,8 +107,8 @@ class StateMachine:
         
         elif self.current_state == RobotStatus.TRACK_BUCKET:
             if bucket_detected:
-                left_ok = bucket_left_edge <= self.bucket_edge_threshold
-                right_ok = bucket_right_edge >= self.frame_width - self.bucket_edge_threshold
+                left_ok = bucket_left_edge >= 0 and bucket_left_edge <= self.bucket_edge_threshold
+                right_ok = bucket_right_edge <= self.frame_width and bucket_right_edge >= self.frame_width - self.bucket_edge_threshold 
                 
                 if left_ok and right_ok:
                     return RobotStatus.PUT_BALL

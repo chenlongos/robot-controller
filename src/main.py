@@ -253,6 +253,8 @@ def main():
                                                                        M=calibration_params['M'],
                                                                        C=calibration_params['C'])
                     observation["tennis_offset_x"] = (box["x"] + box["w"] / 2) - target_width / 2
+                    observation["tennis_left_edge"] = box["x"]
+                    observation["tennis_right_edge"] = box["x"] + box["w"]
             
             # 桶检测
             elif current_state in [RobotStatus.SEARCH_BUCKET, RobotStatus.TRACK_BUCKET]:
@@ -274,8 +276,8 @@ def main():
                 # 状态转换时的特殊处理
                 if next_state == RobotStatus.PICK:
                     robot.controller.stop()
-                    robot.move_distance(0.25, speed=0.6)
-                    robot.controller.stop()
+                    # robot.move_distance(0.25, speed=0.6)
+                    # robot.controller.stop()
 
                     logging.info("开始抓取网球...")
                     result = robot.execute_arm_action("pick")
@@ -328,25 +330,51 @@ def main():
                     robot.idle()
             elif state_machine.get_state() == RobotStatus.APPROACH_TENNIS:
                 if observation["tennis_detected"]:
-                    approach_observation = {
-                        "target_offset_x": observation["tennis_offset_x"],
-                        "target_distance": observation["tennis_distance"]
-                    }
-                    command = robot.controller.approach(approach_observation)
-                    logging.debug(f"接近中: speed_x={command.get('x', 0):.3f}, speed_w={command.get('w', 0):.3f}")
+                    tennis_left_edge = observation.get("tennis_left_edge", 0)
+                    tennis_right_edge = observation.get("tennis_right_edge", 0)
+                    
+                    edge_ok = tennis_left_edge != 0 and tennis_right_edge != target_width
+                    
+                    if edge_ok:
+                        approach_observation = {
+                            "target_offset_x": observation["tennis_offset_x"],
+                            "target_distance": observation["tennis_distance"]
+                        }
+                        command = robot.controller.approach(approach_observation)
+                        logging.debug(f"接近中: speed_x={command.get('x', 0):.3f}, speed_w={command.get('w', 0):.3f}")
+                    else:
+                        logging.debug(f"网球框边缘越界，正在旋转调整: left={tennis_left_edge}, right={tennis_right_edge}")
+                        search_speed = config.control.search_rotation_speed
+                        if tennis_left_edge == 0:
+                            robot.controller.move(0.0, 0.0,-search_speed)
+                        else:
+                            robot.controller.move(0.0, 0.0, +search_speed)
                 else:
                     robot.idle()
             elif state_machine.get_state() == RobotStatus.TRACK_BUCKET:
                 if observation["bucket_detected"]:
-                    bucket_center_x = (observation["bucket_left_edge"] + observation["bucket_right_edge"]) / 2
-                    bucket_offset_x = bucket_center_x - config.device.parameters.frame_width / 2
-                    track_observation = {
-                        "target_offset_x": bucket_offset_x,
-                        "target_offset_y": 0.0,
-                        "target_distance": observation.get("bucket_distance", 1.0)
-                    }
-                    command = robot.controller.track(track_observation)
-                    logging.debug(f"追踪桶: speed_x={command.get('x', 0):.3f}, speed_w={command.get('w', 0):.3f}")
+                    bucket_left_edge = observation.get("bucket_left_edge", 0)
+                    bucket_right_edge = observation.get("bucket_right_edge", 0)
+                    
+                    edge_ok = bucket_left_edge != 0 and bucket_right_edge != target_width
+                    
+                    if True:
+                        bucket_center_x = (bucket_left_edge + bucket_right_edge) / 2
+                        bucket_offset_x = bucket_center_x - config.device.parameters.frame_width / 2
+                        track_observation = {
+                            "target_offset_x": bucket_offset_x,
+                            "target_offset_y": 0.0,
+                            "target_distance": observation.get("bucket_distance", 1.0)
+                        }
+                        command = robot.controller.track(track_observation)
+                        logging.debug(f"追踪桶: speed_x={command.get('x', 0):.3f}, speed_w={command.get('w', 0):.3f}")
+                    else:
+                        logging.debug(f"桶框边缘越界，正在旋转调整: left={bucket_left_edge}, right={bucket_right_edge}")
+                        search_speed = config.control.search_rotation_speed
+                        if bucket_left_edge == 0:
+                            robot.controller.move(0.0, 0.0,-search_speed)
+                        else:
+                            robot.controller.move(0.0, 0.0, +search_speed)
                 else:
                     robot.idle()
             elif state_machine.get_state() in [RobotStatus.PICK, RobotStatus.PUT_BALL]:

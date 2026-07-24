@@ -491,7 +491,7 @@ class VisionModule:
             if user_input == 'n':
                 continue
             
-            frame = robot.camera.capture(flush_frames=5)
+            frame = robot.capture(flush_frames=5)
             if frame is None:
                 print(f"无法捕获图像，跳过 {dist} 米")
                 continue

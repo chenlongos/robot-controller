@@ -29,7 +29,8 @@ class DifferentialBase(BaseInterface):
         self.vx = 0.0  # 前后速度 (m/s)
         self.vy = 0.0  # 左右速度（差分底盘为0）
         self.vw = 0.0  # 旋转速度 (rad/s)
-        self.LOOP_TIME = 0.001
+        self.LOOP_TIME = 0.01
+        self._dirty = True
         self.running = True
         self.thread = threading.Thread(target=self._control_loop)
         self.thread.daemon = True
@@ -68,10 +69,16 @@ class DifferentialBase(BaseInterface):
                 v_left *= scale
                 v_right *= scale
             
-            left_pwm = int((v_left / max_rpm) * 100)
-            right_pwm = int((v_right / max_rpm) * 100)
+            if max_val < 0.001:
+                left_pwm = 0
+                right_pwm = 0
+            else:
+                left_pwm = int(round((v_left / max_rpm) * 100))
+                right_pwm = int(round((v_right / max_rpm) * 100))
             
-            self.driver.set_speeds(left_pwm, right_pwm)
+            if self._dirty:
+                self.driver.set_speeds(left_pwm, right_pwm)
+                self._dirty = False
             self.driver.update(dt)
             
             time.sleep(self.LOOP_TIME)
@@ -86,12 +93,14 @@ class DifferentialBase(BaseInterface):
         """
         self.vx = max(-self.max_linear_speed, min(self.max_linear_speed, x))
         self.vw = max(-self.max_angular_speed, min(self.max_angular_speed, w))
+        self._dirty = True
     
     def stop(self) -> None:
         """停止运动"""
         self.vx = 0.0
         self.vy = 0.0
         self.vw = 0.0
+        self._dirty = True
         self.driver.stop()
     
     def cleanup(self) -> None:

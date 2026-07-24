@@ -10,7 +10,6 @@ class SystemConfig:
     """系统配置"""
     robot_id: str
     log_level: str
-    debug_mode: bool
     hardware_timeout: float
     max_retries: int
     display_enabled: bool
@@ -53,7 +52,6 @@ class ControlConfig:
     kp_dist: float
     kp_angle: float
     wheel_base: float
-    max_speed: float
     max_linear_speed: float
     approach_threshold: float
     target_x: float
@@ -92,6 +90,9 @@ class UARTConfig:
     baudrate: int
     ppr: int
     pwm_freq: int
+    min_pwm: int = 20
+    turn_threshold: int = 20
+    direction_forward: int = 1
 
 @dataclass
 class BaseConfig:
@@ -212,7 +213,10 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
             port=uart_data['PORT'],
             baudrate=uart_data['BAUDRATE'],
             ppr=uart_data['PPR'],
-            pwm_freq=uart_data['PWM_FREQ']
+            pwm_freq=uart_data['PWM_FREQ'],
+            min_pwm=uart_data.get('MIN_PWM', 20),
+            turn_threshold=uart_data.get('TURN_THRESHOLD', 20),
+            direction_forward=uart_data.get('DIRECTION_FORWARD', 1)
         )
     
     arm_config = None
@@ -230,11 +234,12 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
             max_relative_target=arm_data.get('MAX_RELATIVE_TARGET', None)
         )
     
+    sm_data = robot.get('STATEMACHINE', {})
+    
     return RobotConfig(
         system=SystemConfig(
             robot_id=common['SYSTEM']['ROBOT_ID'],
             log_level=common['SYSTEM']['LOG_LEVEL'],
-            debug_mode=common['SYSTEM']['DEBUG_MODE'],
             hardware_timeout=common['SYSTEM']['HARDWARE_TIMEOUT'],
             max_retries=common['SYSTEM']['MAX_RETRIES'],
             display_enabled=common['SYSTEM'].get('DISPLAY_ENABLED', False),
@@ -259,13 +264,12 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
             kp_dist=base_data.get('CONTROL', {}).get('KP_DIST', 0.8),
             kp_angle=base_data.get('CONTROL', {}).get('KP_ANGLE', 0.005),
             wheel_base=base_data.get('WHEEL_BASE', 0.2),
-            max_speed=base_data.get('CONTROL', {}).get('MAX_SPEED', 0.3),
             max_linear_speed=base_data.get('CONTROL', {}).get('MAX_LINEAR_SPEED', 0.4),
             approach_threshold=base_data.get('CONTROL', {}).get('APPROACH_THRESHOLD', 0.9),
-            target_x=base_data.get('CONTROL', {}).get('TARGET_X', 0.0),
-            threshold_x=base_data.get('CONTROL', {}).get('THRESHOLD_X', 10.0),
-            target_distance=base_data.get('CONTROL', {}).get('TARGET_DISTANCE', 0.2),
-            threshold_d=base_data.get('CONTROL', {}).get('THRESHOLD_D', 0.01),
+            target_x=sm_data.get('TARGET_X', 0.0),
+            threshold_x=sm_data.get('THRESHOLD_X', 10.0),
+            target_distance=sm_data.get('TARGET_DISTANCE', 0.2),
+            threshold_d=sm_data.get('THRESHOLD_D', 0.01),
             approach_kp=base_data.get('CONTROL', {}).get('APPROACH_KP', 0.6),
             approach_ki=base_data.get('CONTROL', {}).get('APPROACH_KI', 0.01),
             approach_kd=base_data.get('CONTROL', {}).get('APPROACH_KD', 0.01),
@@ -273,13 +277,13 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
             search_rotation_speed=base_data.get('CONTROL', {}).get('SEARCH_ROTATION_SPEED', 0.3)
         ),
         statemachine=StateMachineConfig(
-            target_x=robot['STATEMACHINE'].get('TARGET_X', 0.0),
-            target_distance=robot['STATEMACHINE'].get('TARGET_DISTANCE', 0.2),
-            threshold_x=robot['STATEMACHINE'].get('THRESHOLD_X', 50.0),
-            threshold_d=robot['STATEMACHINE'].get('THRESHOLD_D', 0.01),
-            grip_threshold=robot['STATEMACHINE'].get('GRIP_THRESHOLD', 90),
-            reach_count_threshold=robot['STATEMACHINE'].get('REACH_COUNT_THRESHOLD', 10),
-            bucket_edge_threshold=robot['STATEMACHINE'].get('BUCKET_EDGE_THRESHOLD', 20)
+            target_x=sm_data.get('TARGET_X', 0.0),
+            target_distance=sm_data.get('TARGET_DISTANCE', 0.2),
+            threshold_x=sm_data.get('THRESHOLD_X', 50.0),
+            threshold_d=sm_data.get('THRESHOLD_D', 0.01),
+            grip_threshold=sm_data.get('GRIP_THRESHOLD', 90),
+            reach_count_threshold=sm_data.get('REACH_COUNT_THRESHOLD', 10),
+            bucket_edge_threshold=sm_data.get('BUCKET_EDGE_THRESHOLD', 20)
         ),
         device=DeviceConfig(
             hardware=HardwareConfig(
@@ -290,8 +294,8 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
                     driver=driver_type,
                     wheel_radius=base_data['WHEEL_RADIUS'],
                     wheel_base=base_data['WHEEL_BASE'],
-                    max_linear_speed=base_data['MAX_LINEAR_SPEED'],
-                    max_angular_speed=base_data['MAX_ANGULAR_SPEED'],
+                    max_linear_speed=base_data.get('CONTROL', {}).get('MAX_LINEAR_SPEED', 0.4),
+                    max_angular_speed=base_data.get('CONTROL', {}).get('MAX_ANGULAR_SPEED', 1.0),
                     motors=motors_config,
                     pid=pid_config,
                     uart=uart_config
