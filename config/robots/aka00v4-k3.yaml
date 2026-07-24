@@ -28,7 +28,7 @@ HARDWARE:
       SEARCH_ROTATION_SPEED: 0.3
     
     UART:
-      PORT: "/dev/ttyS2"
+      PORT: "/dev/ttyACM0"
       BAUDRATE: 115200
       PPR: 4680
       PWM_FREQ: 20000
@@ -41,7 +41,7 @@ HARDWARE:
 
   ARM:
     TYPE: "zp10s"
-    PORT: "/dev/ttyS0"
+    PORT: "/dev/ttyUSB0"
     BAUDRATE: 115200
 
 # 视觉参数
