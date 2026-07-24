@@ -226,16 +226,11 @@ class Esp32C3TtDriver:
         left_small = abs(left_pwm) < self.min_pwm
         right_small = abs(right_pwm) < self.min_pwm
         
-        if (left_small or right_small) and (left_pwm != 0 and right_pwm != 0):
-            diff = abs(left_pwm - right_pwm)
-            
-            if diff > self.turn_threshold:
-                left_pwm = self.min_pwm * (1 if left_pwm > right_pwm else -1)
-                right_pwm = self.min_pwm * (1 if right_pwm > left_pwm else -1)
-            else:
-                avg_sign = 1 if (left_pwm + right_pwm) >= 0 else -1
-                left_pwm = self.min_pwm * avg_sign
-                right_pwm = self.min_pwm * avg_sign
+        if left_pwm != 0 and left_small:
+            left_pwm = self.min_pwm * (1 if left_pwm > 0 else -1)
+        
+        if right_pwm != 0 and right_small:
+            right_pwm = self.min_pwm * (1 if right_pwm > 0 else -1)
         
         left_pwm *= self.direction_forward
         right_pwm *= self.direction_forward

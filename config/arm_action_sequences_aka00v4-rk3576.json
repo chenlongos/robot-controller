@@ -5,14 +5,14 @@
       "positions": [
         200,
         30,
-        150
+        100
       ]
     }
   ],
   "pick": [
     {
       "type": "gripper",
-      "position": 150
+      "position": 100
     },
     {
       "type": "delay",
@@ -21,9 +21,9 @@
     {
       "type": "joint",
       "positions": [
-        230,
+        220,
         75,
-        150
+        100
       ]
     },
     {
@@ -32,7 +32,7 @@
     },
     {
       "type": "gripper",
-      "position": 90
+      "position": 40
     },
     {
       "type": "delay",
@@ -43,7 +43,7 @@
       "positions": [
         130,
         70,
-        90
+        40
       ]
     }
   ],
@@ -53,7 +53,7 @@
       "positions": [
         160,
         110,
-        90
+        40
       ]
     },
     {
@@ -62,7 +62,7 @@
     },
     {
       "type": "gripper",
-      "position": 150
+      "position": 100
     },
     {
       "type": "delay",
@@ -80,13 +80,13 @@
   "open_gripper": [
     {
       "type": "gripper",
-      "position": 150
+      "position": 100
     }
   ],
   "close_gripper": [
     {
       "type": "gripper",
-      "position": 90
+      "position": 40
     }
   ]
 }

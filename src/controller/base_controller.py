@@ -94,7 +94,7 @@ class BaseController:
         kp_angle = self._config_dict.get('approach_kp_angle', 0.5)
         
         angular_speed = kp_angle * (error_x - target_x)
-        angular_speed = max(-0.8, min(0.8, angular_speed))
+        angular_speed = max(-0.3, min(0.3, angular_speed))
         
         error_dist = distance - target_distance
         

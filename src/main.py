@@ -276,25 +276,16 @@ def main():
                 # 状态转换时的特殊处理
                 if next_state == RobotStatus.PICK:
                     robot.controller.stop()
-                    # robot.move_distance(0.25, speed=0.6)
-                    # robot.controller.stop()
 
                     logging.info("开始抓取网球...")
                     result = robot.execute_arm_action("pick")
                     logging.info("抓取完成")
                     
-                    gripper_angle = robot.get_gripper_position()
-                    observation["gripper_angle"] = gripper_angle
-                    logging.info(f"抓取动作完成，夹爪角度: {gripper_angle}")
-                    
-                    next_state = state_machine.transition(observation)
+                    next_state = RobotStatus.SEARCH_BUCKET
                     state_machine.set_state(next_state)
                     logging.info(f"抓取完成，状态转换: {RobotStatus.PICK} -> {next_state}")
                     
-                    if next_state in [RobotStatus.SEARCH_BUCKET, RobotStatus.TRACK_BUCKET]:
-                        robot.target_type = "bucket"
-                    elif next_state in [RobotStatus.SEARCH_TENNIS, RobotStatus.TRACK_TENNIS, RobotStatus.APPROACH_TENNIS]:
-                        robot.target_type = "tennis"
+                    robot.target_type = "bucket"
                 
                 elif next_state == RobotStatus.PUT_BALL:
                     robot.controller.stop()
@@ -333,7 +324,7 @@ def main():
                     tennis_left_edge = observation.get("tennis_left_edge", 0)
                     tennis_right_edge = observation.get("tennis_right_edge", 0)
                     
-                    edge_ok = tennis_left_edge != 0 and tennis_right_edge != target_width
+                    edge_ok = tennis_left_edge > 0 and tennis_right_edge < target_width
                     
                     if edge_ok:
                         approach_observation = {

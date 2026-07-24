@@ -96,10 +96,7 @@ class StateMachine:
                     return RobotStatus.SEARCH_TENNIS
         
         elif self.current_state == RobotStatus.PICK:
-            if gripper_angle > self.grip_threshold:
-                return RobotStatus.SEARCH_BUCKET
-            else:
-                return RobotStatus.SEARCH_TENNIS
+            return RobotStatus.SEARCH_BUCKET
         
         elif self.current_state == RobotStatus.SEARCH_BUCKET:
             if bucket_detected:
