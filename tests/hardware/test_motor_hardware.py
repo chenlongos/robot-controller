@@ -16,8 +16,8 @@ MOTOR_CONFIGS_FROM_CONFIG = [
         "phase_b": cfg.phase_B,
         "pwm_chip": cfg.pwm_chip,
         "pwm_channel": cfg.pwm_channel,
-        "direction_inverted": cfg.direction_inverted,
-        "expected_direction": -1 if cfg.direction_inverted else 1
+        "direction_forward": cfg.direction_forward,
+        "expected_direction": cfg.direction_forward
     }
     for cfg in _config.device.hardware.base.motors
 ]
@@ -49,7 +49,7 @@ class TestMotorHardware:
                     kp=_config.device.hardware.base.pid.kp,
                     ki=_config.device.hardware.base.pid.ki,
                     kd=_config.device.hardware.base.pid.kd,
-                    direction_inverted=config["direction_inverted"]
+                    direction_forward=config["direction_forward"]
                 )
                 motors.append(motor)
                 print(f"  ✓ 初始化电机 {config['name']}")
@@ -109,7 +109,7 @@ class TestMotorHardware:
                 kp=_config.device.hardware.base.pid.kp,
                 ki=_config.device.hardware.base.pid.ki,
                 kd=_config.device.hardware.base.pid.kd,
-                direction_inverted=config["direction_inverted"]
+                direction_forward=config["direction_forward"]
             )
             
             # 测试 get_speed 方法
@@ -148,10 +148,9 @@ class TestMotorHardware:
         # 测试正向和反向
         config = MOTOR_CONFIGS_FROM_CONFIG[0]  # 使用 FL 电机
         motor_normal = None
-        motor_inverted = None
         
         try:
-            # 创建两个电机实例，一个正向，一个反向
+            # 创建电机实例
             motor_normal = Motor(
                 name="FL_NORMAL",
                 gpio_in2=config["in2"],
@@ -163,7 +162,7 @@ class TestMotorHardware:
                 kp=_config.device.hardware.base.pid.kp,
                 ki=_config.device.hardware.base.pid.ki,
                 kd=_config.device.hardware.base.pid.kd,
-                direction_inverted=False
+                direction_forward=1
             )
             
             print(f"\n测试电机方向控制...")
@@ -183,5 +182,3 @@ class TestMotorHardware:
         finally:
             if motor_normal:
                 motor_normal.cleanup()
-            if motor_inverted:
-                motor_inverted.cleanup()

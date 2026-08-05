@@ -19,8 +19,8 @@ from src.web.webrtc_server import start_webrtc_server, push_frame, is_available 
 import src.base
 import src.camera
 
-# 加载配置，默认机器人是 aka00v4-rk3576
-config = load_config(robot_name="aka00v4-rk3576")
+# 加载配置，默认机器人是 aka00v4-lubancat3
+config = load_config(robot_name="aka00v4-lubancat3")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 

@@ -16,8 +16,8 @@ MOTOR_CONFIGS_FROM_CONFIG = [
         "phase_b": cfg.phase_B,
         "pwm_chip": cfg.pwm_chip,
         "pwm_channel": cfg.pwm_channel,
-        "direction_inverted": cfg.direction_inverted,
-        "expected_direction": -1 if cfg.direction_inverted else 1
+        "direction_forward": cfg.direction_forward,
+        "expected_direction": cfg.direction_forward
     }
     for cfg in _config.device.hardware.base.motors
 ]
@@ -43,7 +43,7 @@ class TestMotorUnit:
                 kp=_config.device.hardware.base.pid.kp,
                 ki=_config.device.hardware.base.pid.ki,
                 kd=_config.device.hardware.base.pid.kd,
-                direction_inverted=config["direction_inverted"]
+                direction_forward=config["direction_forward"]
             )
             
             # 验证电机名称
@@ -85,7 +85,7 @@ class TestMotorUnit:
                 kp=_config.device.hardware.base.pid.kp,
                 ki=_config.device.hardware.base.pid.ki,
                 kd=_config.device.hardware.base.pid.kd,
-                direction_inverted=config["direction_inverted"]
+                direction_forward=config["direction_forward"]
             )
             
             # 设置目标速度

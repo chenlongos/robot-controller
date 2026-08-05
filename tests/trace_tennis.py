@@ -366,7 +366,7 @@ def start_webrtc_server(port: int = 8080):
 def main():
     """主程序入口"""
     global running, video_track
-    robot_name = "aka00v4-rk3576"
+    robot_name = "aka00v4-lubancat3"
     config = load_config(robot_name=robot_name)
     
     camera = None

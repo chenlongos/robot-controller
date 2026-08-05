@@ -71,7 +71,6 @@ class D24aJgb37Driver:
                 kp=pid_config.kp,
                 ki=pid_config.ki,
                 kd=pid_config.kd,
-                direction_inverted=motor_data.direction_inverted
             )
         
         self.max_speed = 400
@@ -128,7 +127,6 @@ class Esp32C3TtDriver:
         self.pwm_freq = uart_config.pwm_freq
         self.min_pwm = getattr(uart_config, 'min_pwm', 20)
         self.turn_threshold = getattr(uart_config, 'turn_threshold', 20)
-        self.direction_forward = getattr(uart_config, 'direction_forward', 1)
         
         self.ser = None
         self._init_serial()
@@ -209,7 +207,7 @@ class Esp32C3TtDriver:
         return self._send_cmd(CMD_CONFIG, payload)
     
     def set_speeds(self, left: int, right: int) -> None:
-        """设置左右轮速度（-100~100，百分比）
+        """设置左右轮速度（-60~60， pwm）
       
         死区补偿策略：
         当任一轮子PWM绝对值小于min_pwm时：
@@ -217,8 +215,8 @@ class Esp32C3TtDriver:
         2. 如果 diff > turn_threshold → 旋转：保持较大速度的方向，反转较小速度的轮子
         3. 如果 diff <= turn_threshold → 直线：两轮同向，取平均符号
         """
-        left_pwm = max(-100, min(100, left))
-        right_pwm = max(-100, min(100, right))
+        left_pwm = max(-60, min(60, left))
+        right_pwm = max(-60, min(60, right))
         
         raw_left = left_pwm
         raw_right = right_pwm
@@ -231,9 +229,6 @@ class Esp32C3TtDriver:
         
         if right_pwm != 0 and right_small:
             right_pwm = self.min_pwm * (1 if right_pwm > 0 else -1)
-        
-        left_pwm *= self.direction_forward
-        right_pwm *= self.direction_forward
         
         payload = struct.pack(">hh", left_pwm, right_pwm)
         self._send_cmd_noresp(CMD_SET_SPEEDS, payload)

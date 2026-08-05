@@ -3,7 +3,7 @@
 
 # 系统配置
 SYSTEM:
-  ROBOT_ID: "aka00v4-rk3576"
+  ROBOT_ID: "aka00v4-lubancat3"
   LOG_LEVEL: "DEBUG"
   HARDWARE_TIMEOUT: 5.0
   MAX_RETRIES: 3

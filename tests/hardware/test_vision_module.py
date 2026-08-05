@@ -16,7 +16,7 @@ class TestVisionModule:
     
     def test_vision_inference_with_camera(self):
         """测试从摄像头捕获帧并进行推理"""
-        config = load_config(robot_name="aka00v4-rk3576")
+        config = load_config(robot_name="aka00v4-lubancat3")
         
         camera = None
         vision = None
@@ -82,7 +82,7 @@ class TestVisionModule:
     
     def test_vision_inference_with_image(self):
         """测试使用图像文件进行推理（备用测试，无需摄像头）"""
-        config = load_config(robot_name="aka00v4-rk3576")
+        config = load_config(robot_name="aka00v4-lubancat3")
         
         test_image_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'images', 'test.jpg')
         

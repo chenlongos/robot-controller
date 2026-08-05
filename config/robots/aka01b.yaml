@@ -22,7 +22,7 @@ HARDWARE:
         phase_B: 42
         pwm_chip: 0
         pwm_channel: 0
-        direction_inverted: true
+        direction_forward: -1
       - name: "front_right"
         in2: 47
         in1: 63
@@ -30,7 +30,7 @@ HARDWARE:
         phase_B: 114
         pwm_chip: 1
         pwm_channel: 0
-        direction_inverted: false
+        direction_forward: 1
       - name: "back_left"
         in2: 34
         in1: 44
@@ -38,7 +38,7 @@ HARDWARE:
         phase_B: 46
         pwm_chip: 5
         pwm_channel: 0
-        direction_inverted: true
+        direction_forward: -1
       - name: "back_right"
         in2: 35
         in1: 101
@@ -46,7 +46,7 @@ HARDWARE:
         phase_B: 99
         pwm_chip: 4
         pwm_channel: 0
-        direction_inverted: false
+        direction_forward: 1
     
     PID:
       KP: 1.8

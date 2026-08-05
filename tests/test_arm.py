@@ -115,8 +115,8 @@ def test_arm(robot_name: str):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='机械臂测试程序')
-    parser.add_argument('--robot', type=str, default='aka00v4-rk3576', 
-                        help='机器人名称 (默认: aka00v4-rk3576)')
+    parser.add_argument('--robot', type=str, default='aka00v4-rock4d', 
+                        help='机器人名称 (默认: aka00v4-rock4d)')
     args = parser.parse_args()
     
     test_arm(args.robot)

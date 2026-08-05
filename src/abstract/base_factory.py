@@ -45,6 +45,8 @@ class BaseFactory:
             'wheel_base': config.wheel_base,
             'max_linear_speed': config.max_linear_speed,
             'max_angular_speed': config.max_angular_speed,
+            'pid': config.pid,
+            'direction_forward': config.uart.direction_forward if config.uart else 1,
         }
         
         return BaseFactory._base_registry[base_type](base_config_dict)

@@ -74,7 +74,7 @@ class MotorConfig:
     phase_B: int
     pwm_chip: int
     pwm_channel: int
-    direction_inverted: bool
+    direction_forward: int = 1
 
 @dataclass
 class PIDConfig:
@@ -82,6 +82,8 @@ class PIDConfig:
     kp: float
     ki: float
     kd: float
+    output_limit: float = 80.0
+    max_rate: float = 5.0
 
 @dataclass
 class UARTConfig:
@@ -192,6 +194,13 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
     if driver_type == "d24a_jgb37":
         motors_config = []
         for motor_data in base_data['MOTORS']:
+            # 统一方向配置：优先使用 direction_forward，兼容旧的 direction_inverted
+            if 'direction_forward' in motor_data:
+                dir_fwd = motor_data['direction_forward']
+            elif 'direction_inverted' in motor_data:
+                dir_fwd = -1 if motor_data['direction_inverted'] else 1
+            else:
+                dir_fwd = 1
             motors_config.append(MotorConfig(
                 name=motor_data['name'],
                 in2=motor_data['in2'],
@@ -200,12 +209,15 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
                 phase_B=motor_data['phase_B'],
                 pwm_chip=motor_data['pwm_chip'],
                 pwm_channel=motor_data['pwm_channel'],
-                direction_inverted=motor_data.get('direction_inverted', False)
+                direction_forward=dir_fwd
             ))
+        pid_data = base_data.get('PID', {})
         pid_config = PIDConfig(
-            kp=base_data['PID']['KP'],
-            ki=base_data['PID']['KI'],
-            kd=base_data['PID']['KD']
+            kp=pid_data.get('KP', 0.5),
+            ki=pid_data.get('KI', 0.1),
+            kd=pid_data.get('KD', 0.05),
+            output_limit=pid_data.get('OUTPUT_LIMIT', 80.0),
+            max_rate=pid_data.get('MAX_RATE', 5.0)
         )
     elif driver_type == "esp32_c3_tt":
         uart_data = base_data['UART']
@@ -218,6 +230,15 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
             turn_threshold=uart_data.get('TURN_THRESHOLD', 20),
             direction_forward=uart_data.get('DIRECTION_FORWARD', 1)
         )
+        pid_data = base_data.get('PID', {})
+        if pid_data:
+            pid_config = PIDConfig(
+                kp=pid_data.get('KP', 0.5),
+                ki=pid_data.get('KI', 0.1),
+                kd=pid_data.get('KD', 0.05),
+                output_limit=pid_data.get('OUTPUT_LIMIT', 80.0),
+                max_rate=pid_data.get('MAX_RATE', 5.0)
+            )
     
     arm_config = None
     if 'ARM' in robot['HARDWARE']:

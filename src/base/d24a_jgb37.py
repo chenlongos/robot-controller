@@ -132,7 +132,7 @@ class PIDController:
 class Motor:
     """电机类 - 底盘的本质组件"""
     def __init__(self, name, gpio_in2, gpio_in1, gpio_phase_a, gpio_phase_b, 
-                 pwm_chip, pwm_channel, kp, ki, kd, direction_inverted=False):
+                 pwm_chip, pwm_channel, kp, ki, kd, direction_forward=1):
         """
         :param name: 电机名称 (FL, FR, BL, BR)
         :param gpio_in2: IN2引脚编号
@@ -142,7 +142,7 @@ class Motor:
         :param pwm_chip: PWM芯片编号
         :param pwm_channel: PWM通道编号
         :param kp, ki, kd: PID参数
-        :param direction_inverted: 是否反转方向
+        :param direction_forward: 方向系数 (1=正常方向, -1=反转方向)
         """
         self.name = name
         # self.CPR = 880  # 530RPM电机：20减速比 * 11线数 * 4(四倍频)
@@ -153,7 +153,7 @@ class Motor:
         self.in1_gpio = None
         self.in2_gpio = None
         self.pwm = None
-        self.direction = -1 if direction_inverted else 1
+        self.direction = direction_forward
         
         # 1. 初始化方向引脚 (IN1, IN2)
         try:

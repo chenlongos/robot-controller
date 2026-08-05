@@ -33,6 +33,13 @@ HARDWARE:
       PPR: 4680
       PWM_FREQ: 20000
 
+    PID:
+      KP: 1.0
+      KI: 0.15
+      KD: 0.0
+      OUTPUT_LIMIT: 70
+      MAX_RATE: 5
+
   CAMERA:
     TYPE: "usb"
     DEVICE_ID: 0

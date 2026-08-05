@@ -37,7 +37,7 @@ class TestBaseControllerHardware:
                     'kp': base_config.pid.kp,
                     'ki': base_config.pid.ki,
                     'kd': base_config.pid.kd,
-                    'direction_inverted': motor_cfg.direction_inverted
+                    'direction_forward': motor_cfg.direction_forward
                 }
             
             # 创建底盘控制器配置
@@ -120,7 +120,7 @@ class TestBaseControllerHardware:
                     'kp': base_config.pid.kp,
                     'ki': base_config.pid.ki,
                     'kd': base_config.pid.kd,
-                    'direction_inverted': motor_cfg.direction_inverted
+                    'direction_forward': motor_cfg.direction_forward
                 }
             
             # 创建底盘控制器配置

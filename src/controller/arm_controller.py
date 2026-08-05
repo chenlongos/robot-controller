@@ -27,7 +27,7 @@ class ArmController:
         "close_gripper": []
     }
     
-    def __init__(self, arm: ArmInterface, robot_name: str = "aka00v4-rk3576", step_delay: float = 0.5) -> None:
+    def __init__(self, arm: ArmInterface, robot_name: str = "aka00v4-rock4d", step_delay: float = 0.5) -> None:
         self.arm = arm
         self.robot_name = robot_name
         self.step_delay = step_delay

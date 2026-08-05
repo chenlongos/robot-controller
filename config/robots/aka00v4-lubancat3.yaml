@@ -1,5 +1,5 @@
-# config/robots/aka00v4-rk3576.yaml
-# AKA-00V4-RK3576机器人特定配置（ESP32-C3 TT底盘，ZP10S机械臂）
+# config/robots/aka00v4-lubancat3.yaml
+# AKA-00V4-LUBANAT3机器人特定配置（ESP32-C3 TT底盘，ZP10S机械臂）
 
 HARDWARE:
   MODE: "rk3576"
@@ -17,20 +17,27 @@ HARDWARE:
       MAX_LINEAR_SPEED: 0.4
       MAX_ANGULAR_SPEED: 0.2
       APPROACH_THRESHOLD: 0.9
-      APPROACH_KP: 1.1
+      APPROACH_KP: 0.6
       APPROACH_KI: 0.01
       APPROACH_KD: 0.00
       APPROACH_KP_ANGLE: 0.1
       SEARCH_ROTATION_SPEED: 0.03
     
     UART:
-      PORT: "/dev/ttyACM0"
+      PORT: "/dev/ttyS3"
       BAUDRATE: 115200
       PPR: 4680
       PWM_FREQ: 20000
-      MIN_PWM: 25
+      MIN_PWM: 10
       TURN_THRESHOLD: 5
       DIRECTION_FORWARD: -1
+
+    PID:
+      KP: 0.5
+      KI: 0.01
+      KD: 0.0
+      OUTPUT_LIMIT: 90
+      MAX_RATE: 5
 
   CAMERA:
     TYPE: "usb"
@@ -40,7 +47,7 @@ HARDWARE:
 
   ARM:
     TYPE: "zp10s"
-    PORT: "/dev/ttyS2"
+    PORT: "/dev/ttyS10"
     BAUDRATE: 115200
 
 # 视觉参数
