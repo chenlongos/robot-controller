@@ -17,13 +17,13 @@ class PIDController:
     """PID控制器 - 支持输出限幅和变化率限制"""
 
     def __init__(self, kp: float, ki: float, kd: float,
-                 output_limit: float = 80.0, max_rate: float = 5.0):
+                 output_limit: float = 100.0, max_rate: float = 5.0):
         """
         :param kp: 比例系数
         :param ki: 积分系数
         :param kd: 微分系数
-        :param output_limit: 输出绝对值上限（PWM百分比），防止过载
-        :param max_rate: 每周期最大输出变化量（PWM百分比），防止PWM突变
+        :param output_limit: 输出绝对值上限（百分比），防止过载
+        :param max_rate: 每周期最大输出变化量（百分比），防止突变
         """
         self.kp = kp
         self.ki = ki
@@ -45,7 +45,7 @@ class PIDController:
         :param setpoint: 目标值（RPM）
         :param measured: 测量值（RPM）
         :param dt: 时间间隔（秒）
-        :return: PID输出（PWM百分比）
+        :return: PID输出（百分比 -100~100）
         """
         error = setpoint - measured
 
@@ -88,6 +88,11 @@ class DifferentialBase(BaseInterface):
             - max_angular_speed: 最大角速度（rad/s）
             - pid: PID配置对象（可选，含kp/ki/kd/output_limit/max_rate）
             - direction_forward: 电机方向修正系数（1或-1），对应驱动的direction_forward
+            - kp: PID比例系数（可选）
+            - ki: PID积分系数（可选）
+            - kd: PID微分系数（可选）
+            - output_limit: PID输出限幅（可选）
+            - max_rate: PID输出变化率限幅（可选）
         """
         self.driver: MotorDriverProtocol = config.get('driver')
         self.wheel_radius = config.get('wheel_radius', 0.042)
@@ -102,13 +107,13 @@ class DifferentialBase(BaseInterface):
             kp = getattr(pid_config, 'kp', config.get('kp', 0.5))
             ki = getattr(pid_config, 'ki', config.get('ki', 0.1))
             kd = getattr(pid_config, 'kd', config.get('kd', 0.05))
-            output_limit = getattr(pid_config, 'output_limit', config.get('output_limit', 80))
+            output_limit = getattr(pid_config, 'output_limit', config.get('output_limit', 100))
             max_rate = getattr(pid_config, 'max_rate', config.get('max_rate', 5))
         else:
             kp = config.get('kp', 0.5)
             ki = config.get('ki', 0.1)
             kd = config.get('kd', 0.05)
-            output_limit = config.get('output_limit', 80)
+            output_limit = config.get('output_limit', 100)
             max_rate = config.get('max_rate', 5)
 
         self.left_pid = PIDController(kp, ki, kd, output_limit, max_rate)
@@ -168,7 +173,7 @@ class DifferentialBase(BaseInterface):
             self.driver.set_speeds(
                 int(round(left_pwm_motor)), int(round(right_pwm_motor)))
 
-            logger.debug(f"target=({target_left:.1f},{target_right:.1f})rpm, "
+            logger.debug(f"DifferentialBase: target=({target_left:.1f},{target_right:.1f})rpm, "
                          f"actual=({actual_left:.1f},{actual_right:.1f})rpm, "
                          f"pwm=({left_pwm_motor:.1f},{right_pwm_motor:.1f})")
 

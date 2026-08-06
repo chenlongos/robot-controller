@@ -92,6 +92,7 @@ class ZP10SArm(ArmInterface):
         )
         
         self._is_connected = True
+        self.restoring_torque()
         logger.info("ZP10S Arm connected")
     
     def _send_frame(self, servo_id: int, angle: float, duration: int = 1000) -> None:

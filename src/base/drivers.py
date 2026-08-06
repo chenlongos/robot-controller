@@ -118,7 +118,14 @@ class D24aJgb37Driver:
 
 
 class Esp32C3TtDriver:
-    """ESP32-C3 TT马达UART驱动实现"""
+    """ESP32-C3 TT马达UART驱动实现
+    
+    接收底盘层的百分比指令(-100~100)，映射到实际PWM值(min_pwm~max_pwm)。
+    映射公式:
+        percent > 0: pwm = (percent/100)*(max_pwm-min_pwm) + min_pwm
+        percent < 0: pwm = -((|percent|/100)*(max_pwm-min_pwm) + min_pwm)
+        percent = 0: pwm = 0
+    """
     
     def __init__(self, uart_config):
         self.port = uart_config.port
@@ -126,6 +133,7 @@ class Esp32C3TtDriver:
         self.ppr = uart_config.ppr
         self.pwm_freq = uart_config.pwm_freq
         self.min_pwm = getattr(uart_config, 'min_pwm', 20)
+        self.max_pwm = getattr(uart_config, 'max_pwm', 60)
         self.turn_threshold = getattr(uart_config, 'turn_threshold', 20)
         
         self.ser = None
@@ -206,36 +214,37 @@ class Esp32C3TtDriver:
         payload = struct.pack(">HH", ppr, pwm_freq)
         return self._send_cmd(CMD_CONFIG, payload)
     
-    def set_speeds(self, left: int, right: int) -> None:
-        """设置左右轮速度（-60~60， pwm）
-      
-        死区补偿策略：
-        当任一轮子PWM绝对值小于min_pwm时：
-        1. 计算速度差 diff = |left_pwm - right_pwm|
-        2. 如果 diff > turn_threshold → 旋转：保持较大速度的方向，反转较小速度的轮子
-        3. 如果 diff <= turn_threshold → 直线：两轮同向，取平均符号
+    def _percent_to_pwm(self, percent: float) -> int:
+        """将百分比(-100~100)映射到实际PWM值(min_pwm~max_pwm)
+        
+        对称映射公式:
+            percent = 0 → 0 (停止)
+            percent > 0 → (percent/100)*(max-min) + min
+            percent < 0 → -((|percent|/100)*(max-min) + min)
         """
-        left_pwm = max(-60, min(60, left))
-        right_pwm = max(-60, min(60, right))
+        if percent == 0:
+            return 0
+        elif percent > 0:
+            return int(round((percent / 100.0) * (self.max_pwm - self.min_pwm) + self.min_pwm))
+        else:
+            abs_p = abs(percent)
+            return -int(round((abs_p / 100.0) * (self.max_pwm - self.min_pwm) + self.min_pwm))
+
+    def set_speeds(self, left: int, right: int) -> None:
+        """设置左右轮速度（百分比 -100~100）
         
-        raw_left = left_pwm
-        raw_right = right_pwm
+        底盘层PID输出百分比，电机层映射到实际PWM值。
+        映射范围: min_pwm=20 ~ max_pwm=60
+        """
+        left_pct = max(-100, min(100, left))
+        right_pct = max(-100, min(100, right))
         
-        left_small = abs(left_pwm) < self.min_pwm
-        right_small = abs(right_pwm) < self.min_pwm
-        
-        if left_pwm != 0 and left_small:
-            left_pwm = self.min_pwm * (1 if left_pwm > 0 else -1)
-        
-        if right_pwm != 0 and right_small:
-            right_pwm = self.min_pwm * (1 if right_pwm > 0 else -1)
+        left_pwm = self._percent_to_pwm(left_pct)
+        right_pwm = self._percent_to_pwm(right_pct)
         
         payload = struct.pack(">hh", left_pwm, right_pwm)
         self._send_cmd_noresp(CMD_SET_SPEEDS, payload)
-        if raw_left != left_pwm or raw_right != right_pwm:
-            logger.debug(f"set_speeds: left={left}>>{raw_left}>>{left_pwm}, right={right}>>{raw_right}>>{right_pwm}, payload={payload.hex()}")
-        else:
-            logger.debug(f"set_speeds: left={left}>>{left_pwm}, right={right}>>{right_pwm}, payload={payload.hex()}")
+        logger.debug(f"set_speeds: left_pct={left_pct}->pwm={left_pwm}, right_pct={right_pct}->pwm={right_pwm}, payload={payload.hex()}")
     
     def update(self, dt):
         """ESP32-C3驱动无需PID更新（PID在ESP32端运行）"""

@@ -487,7 +487,7 @@ def main():
                            f"speed_x={x:.3f}, speed_w={w:.3f}")
             
             elif current_state == STATE_APPROACH:
-                command = controller.approach(observation)
+                command = controller.track(observation)
                 x = command.get('x', 0.0)
                 w = command.get('w', 0.0)
                 logger.info(f"接近中: offset_x={observation['target_offset_x']:.1f}, "

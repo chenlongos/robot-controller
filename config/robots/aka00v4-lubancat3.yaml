@@ -7,37 +7,28 @@ HARDWARE:
   
   BASE:
     TYPE: "differential"
-    DRIVER: "esp32_c3_tt"
     WHEEL_RADIUS: 0.03
     WHEEL_BASE: 0.18
+    PORT: "/dev/ttyS3"
+    BAUDRATE: 115200
     
     CONTROL:
       KP_DIST: 1.1
       KP_ANGLE: 0.5
+      KI: 0.01
+      KD: 0.01
       MAX_LINEAR_SPEED: 0.4
-      MAX_ANGULAR_SPEED: 0.2
-      APPROACH_THRESHOLD: 0.9
-      APPROACH_KP: 0.6
-      APPROACH_KI: 0.01
-      APPROACH_KD: 0.00
-      APPROACH_KP_ANGLE: 0.1
-      SEARCH_ROTATION_SPEED: 0.03
-    
-    UART:
-      PORT: "/dev/ttyS3"
-      BAUDRATE: 115200
-      PPR: 4680
-      PWM_FREQ: 20000
-      MIN_PWM: 10
-      TURN_THRESHOLD: 5
-      DIRECTION_FORWARD: -1
+      MAX_ANGULAR_SPEED: 3
+      SEARCH_ROTATION_SPEED: 1.5
 
-    PID:
+    DRIVER:
+      TYPE: "esp32_c3_tt"
       KP: 0.5
       KI: 0.01
       KD: 0.0
-      OUTPUT_LIMIT: 90
       MAX_RATE: 5
+      MIN_PWM: 20
+      MAX_PWM: 60
 
   CAMERA:
     TYPE: "usb"

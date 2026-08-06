@@ -51,18 +51,14 @@ class ControlConfig:
     """控制参数配置"""
     kp_dist: float
     kp_angle: float
+    ki: float
+    kd: float
     wheel_base: float
     max_linear_speed: float
-    approach_threshold: float
-    target_x: float
-    threshold_x: float
-    target_distance: float
-    threshold_d: float
-    approach_kp: float
-    approach_ki: float
-    approach_kd: float
-    approach_kp_angle: float
+    max_angular_speed: float
     search_rotation_speed: float
+    target_x: float
+    target_distance: float
 
 @dataclass
 class MotorConfig:
@@ -82,7 +78,7 @@ class PIDConfig:
     kp: float
     ki: float
     kd: float
-    output_limit: float = 80.0
+    output_limit: float = 100.0
     max_rate: float = 5.0
 
 @dataclass
@@ -93,6 +89,7 @@ class UARTConfig:
     ppr: int
     pwm_freq: int
     min_pwm: int = 20
+    max_pwm: int = 60
     turn_threshold: int = 20
     direction_forward: int = 1
 
@@ -185,7 +182,8 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
     
     base_data = robot['HARDWARE']['BASE']
     base_type = base_data['TYPE']
-    driver_type = base_data['DRIVER']
+    driver_data = base_data['DRIVER']
+    driver_type = driver_data['TYPE']
     
     motors_config = None
     pid_config = None
@@ -211,34 +209,31 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
                 pwm_channel=motor_data['pwm_channel'],
                 direction_forward=dir_fwd
             ))
-        pid_data = base_data.get('PID', {})
         pid_config = PIDConfig(
-            kp=pid_data.get('KP', 0.5),
-            ki=pid_data.get('KI', 0.1),
-            kd=pid_data.get('KD', 0.05),
-            output_limit=pid_data.get('OUTPUT_LIMIT', 80.0),
-            max_rate=pid_data.get('MAX_RATE', 5.0)
+            kp=driver_data.get('KP', 0.5),
+            ki=driver_data.get('KI', 0.1),
+            kd=driver_data.get('KD', 0.05),
+            output_limit=driver_data.get('OUTPUT_LIMIT', 100.0),
+            max_rate=driver_data.get('MAX_RATE', 5.0)
         )
     elif driver_type == "esp32_c3_tt":
-        uart_data = base_data['UART']
         uart_config = UARTConfig(
-            port=uart_data['PORT'],
-            baudrate=uart_data['BAUDRATE'],
-            ppr=uart_data['PPR'],
-            pwm_freq=uart_data['PWM_FREQ'],
-            min_pwm=uart_data.get('MIN_PWM', 20),
-            turn_threshold=uart_data.get('TURN_THRESHOLD', 20),
-            direction_forward=uart_data.get('DIRECTION_FORWARD', 1)
+            port=base_data['PORT'],
+            baudrate=base_data['BAUDRATE'],
+            ppr=driver_data.get('PPR', 4680),
+            pwm_freq=driver_data.get('PWM_FREQ', 20000),
+            min_pwm=driver_data.get('MIN_PWM', 20),
+            max_pwm=driver_data.get('MAX_PWM', 60),
+            turn_threshold=driver_data.get('TURN_THRESHOLD', 20),
+            direction_forward=driver_data.get('DIRECTION_FORWARD', 1)
         )
-        pid_data = base_data.get('PID', {})
-        if pid_data:
-            pid_config = PIDConfig(
-                kp=pid_data.get('KP', 0.5),
-                ki=pid_data.get('KI', 0.1),
-                kd=pid_data.get('KD', 0.05),
-                output_limit=pid_data.get('OUTPUT_LIMIT', 80.0),
-                max_rate=pid_data.get('MAX_RATE', 5.0)
-            )
+        pid_config = PIDConfig(
+            kp=driver_data.get('KP', 0.5),
+            ki=driver_data.get('KI', 0.1),
+            kd=driver_data.get('KD', 0.05),
+            output_limit=driver_data.get('OUTPUT_LIMIT', 100.0),
+            max_rate=driver_data.get('MAX_RATE', 5.0)
+        )
     
     arm_config = None
     if 'ARM' in robot['HARDWARE']:
@@ -256,6 +251,7 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
         )
     
     sm_data = robot.get('STATEMACHINE', {})
+    control_data = base_data.get('CONTROL', {})
     
     return RobotConfig(
         system=SystemConfig(
@@ -282,20 +278,16 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
             tennis_width_near=robot['VISION']['TENNIS_WIDTH_NEAR']
         ),
         control=ControlConfig(
-            kp_dist=base_data.get('CONTROL', {}).get('KP_DIST', 0.8),
-            kp_angle=base_data.get('CONTROL', {}).get('KP_ANGLE', 0.005),
+            kp_dist=control_data.get('KP_DIST', 0.8),
+            kp_angle=control_data.get('KP_ANGLE', 0.005),
+            ki=control_data.get('KI', 0.5),
+            kd=control_data.get('KD', 0.1),
             wheel_base=base_data.get('WHEEL_BASE', 0.2),
-            max_linear_speed=base_data.get('CONTROL', {}).get('MAX_LINEAR_SPEED', 0.4),
-            approach_threshold=base_data.get('CONTROL', {}).get('APPROACH_THRESHOLD', 0.9),
+            max_linear_speed=control_data.get('MAX_LINEAR_SPEED', 0.4),
+            max_angular_speed=control_data.get('MAX_ANGULAR_SPEED', 1.0),
+            search_rotation_speed=control_data.get('SEARCH_ROTATION_SPEED', 0.3),
             target_x=sm_data.get('TARGET_X', 0.0),
-            threshold_x=sm_data.get('THRESHOLD_X', 10.0),
-            target_distance=sm_data.get('TARGET_DISTANCE', 0.2),
-            threshold_d=sm_data.get('THRESHOLD_D', 0.01),
-            approach_kp=base_data.get('CONTROL', {}).get('APPROACH_KP', 0.6),
-            approach_ki=base_data.get('CONTROL', {}).get('APPROACH_KI', 0.01),
-            approach_kd=base_data.get('CONTROL', {}).get('APPROACH_KD', 0.01),
-            approach_kp_angle=base_data.get('CONTROL', {}).get('APPROACH_KP_ANGLE', 0.002),
-            search_rotation_speed=base_data.get('CONTROL', {}).get('SEARCH_ROTATION_SPEED', 0.3)
+            target_distance=sm_data.get('TARGET_DISTANCE', 0.2)
         ),
         statemachine=StateMachineConfig(
             target_x=sm_data.get('TARGET_X', 0.0),

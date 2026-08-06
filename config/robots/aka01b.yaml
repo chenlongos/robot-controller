@@ -11,9 +11,22 @@ HARDWARE:
     DRIVER: "d24a_jgb37"
     WHEEL_RADIUS: 0.042
     WHEEL_BASE: 0.195
-    MAX_LINEAR_SPEED: 0.4
-    MAX_ANGULAR_SPEED: 1.0
     
+    CONTROL:
+      KP_DIST: 0.8
+      KP_ANGLE: 0.005
+      KI: 0.5
+      KD: 0.1
+      MAX_LINEAR_SPEED: 0.4
+      MAX_ANGULAR_SPEED: 1.0
+      SEARCH_ROTATION_SPEED: 0.3
+
+    DRIVER:
+      TYPE: "d24a_jgb37"
+      KP: 1.8
+      KI: 0.004
+      KD: 0.002
+
     MOTORS:
       - name: "front_left"
         in2: 36
@@ -47,11 +60,6 @@ HARDWARE:
         pwm_chip: 4
         pwm_channel: 0
         direction_forward: 1
-    
-    PID:
-      KP: 1.8
-      KI: 0.004
-      KD: 0.002
 
   CAMERA:
     TYPE: "usb"

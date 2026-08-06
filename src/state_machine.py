@@ -5,8 +5,7 @@ from typing import Dict, Any, Optional
 class RobotStatus(Enum):
     """机器人状态枚举"""
     SEARCH_TENNIS = "search_tennis"    # 搜索网球
-    TRACK_TENNIS = "track_tennis"      # 跟踪网球（远距离）
-    APPROACH_TENNIS = "approach_tennis" # 接近网球（近距离）
+    TRACK_TENNIS = "track_tennis"      # 跟踪网球
     PICK = "pick"                      # 抓取网球
     SEARCH_BUCKET = "search_bucket"    # 寻找桶
     TRACK_BUCKET = "track_bucket"      # 跟踪桶
@@ -61,22 +60,9 @@ class StateMachine:
         
         if self.current_state == RobotStatus.SEARCH_TENNIS:
             if tennis_detected:
-                if tennis_distance > 1.0:
-                    return RobotStatus.TRACK_TENNIS
-                else:
-                    return RobotStatus.APPROACH_TENNIS
+                return RobotStatus.TRACK_TENNIS
         
         elif self.current_state == RobotStatus.TRACK_TENNIS:
-            if tennis_detected:
-                if tennis_distance <= 1.0:
-                    return RobotStatus.APPROACH_TENNIS
-            else:
-                self.lost_count += 1
-                if self.lost_count >= self.reach_count_threshold:
-                    self.lost_count = 0
-                    return RobotStatus.SEARCH_TENNIS
-        
-        elif self.current_state == RobotStatus.APPROACH_TENNIS:
             if tennis_detected:
                 x_ok = abs(tennis_offset_x - self.target_x) <= self.threshold_x
                 d_ok = abs(tennis_distance - self.target_distance) <= self.threshold_d

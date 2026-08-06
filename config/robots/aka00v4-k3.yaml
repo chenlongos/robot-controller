@@ -7,29 +7,28 @@ HARDWARE:
   
   BASE:
     TYPE: "differential"
-    DRIVER: "esp32_c3_tt"
     WHEEL_RADIUS: 0.03
     WHEEL_BASE: 0.18
+    PORT: "/dev/ttyACM0"
+    BAUDRATE: 115200
     
     CONTROL:
       KP_DIST: 0.8
       KP_ANGLE: 0.005
+      KI: 0.01
+      KD: 0.01
       MAX_LINEAR_SPEED: 0.4
       MAX_ANGULAR_SPEED: 1.0
-      APPROACH_THRESHOLD: 0.9
-      TARGET_X: 0.0
-      THRESHOLD_X: 10.0
-      TARGET_DISTANCE: 0.2
-      THRESHOLD_D: 0.01
-      APPROACH_KP: 0.6
-      APPROACH_KI: 0.01
-      APPROACH_KD: 0.01
-      APPROACH_KP_ANGLE: 0.002
       SEARCH_ROTATION_SPEED: 0.3
-    
-    UART:
-      PORT: "/dev/ttyACM0"
-      BAUDRATE: 115200
+
+    DRIVER:
+      TYPE: "esp32_c3_tt"
+      KP: 0.5
+      KI: 0.1
+      KD: 0.05
+      MAX_RATE: 5
+      MIN_PWM: 20
+      MAX_PWM: 60
       PPR: 4680
       PWM_FREQ: 20000
 

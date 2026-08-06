@@ -243,7 +243,7 @@ def main():
             current_state = state_machine.get_state()
             
             # 网球检测
-            if current_state in [RobotStatus.SEARCH_TENNIS, RobotStatus.APPROACH_TENNIS, RobotStatus.TRACK_TENNIS]:
+            if current_state in [RobotStatus.SEARCH_TENNIS, RobotStatus.TRACK_TENNIS]:
                 tennis_result = vision_module.infer(frame)
                 if tennis_result:
                     observation["tennis_detected"] = True
@@ -297,52 +297,32 @@ def main():
                     state_machine.set_state(next_state)
                     logging.info(f"放置完成，状态转换: {RobotStatus.PUT_BALL} -> {next_state}")
                     
-                    if next_state in [RobotStatus.SEARCH_TENNIS, RobotStatus.TRACK_TENNIS, RobotStatus.APPROACH_TENNIS]:
+                    if next_state in [RobotStatus.SEARCH_TENNIS, RobotStatus.TRACK_TENNIS]:
                         robot.target_type = "tennis"
                 
-                elif next_state in [RobotStatus.SEARCH_TENNIS, RobotStatus.TRACK_TENNIS, RobotStatus.APPROACH_TENNIS]:
+                elif next_state in [RobotStatus.SEARCH_TENNIS, RobotStatus.TRACK_TENNIS]:
                     robot.target_type = "tennis"
                 elif next_state in [RobotStatus.SEARCH_BUCKET, RobotStatus.TRACK_BUCKET]:
                     robot.target_type = "bucket"
 
             # 执行动作
-            if state_machine.get_state() in [RobotStatus.SEARCH_TENNIS, RobotStatus.SEARCH_BUCKET]:
+            current_state = state_machine.get_state()
+            logging.debug(f"当前状态: {current_state.value}, 网球检测: {observation['tennis_detected']}, 桶检测: {observation['bucket_detected']}")
+            if current_state in [RobotStatus.SEARCH_TENNIS, RobotStatus.SEARCH_BUCKET]:
+                logging.debug(f"执行搜索旋转: {current_state.value}")
                 robot.idle()
-            elif state_machine.get_state() == RobotStatus.TRACK_TENNIS:
+            elif current_state == RobotStatus.TRACK_TENNIS:
                 if observation["tennis_detected"]:
                     track_observation = {
                         "target_offset_x": observation["tennis_offset_x"],
-                        "target_offset_y": 0.0,
                         "target_distance": observation["tennis_distance"]
                     }
                     command = robot.controller.track(track_observation)
                     logging.debug(f"追踪中: speed_x={command.get('x', 0):.3f}, speed_w={command.get('w', 0):.3f}")
                 else:
+                    logging.debug("追踪网球但未检测到，执行搜索旋转")
                     robot.idle()
-            elif state_machine.get_state() == RobotStatus.APPROACH_TENNIS:
-                if observation["tennis_detected"]:
-                    tennis_left_edge = observation.get("tennis_left_edge", 0)
-                    tennis_right_edge = observation.get("tennis_right_edge", 0)
-                    
-                    edge_ok = tennis_left_edge > 0 and tennis_right_edge < target_width
-                    
-                    if edge_ok:
-                        approach_observation = {
-                            "target_offset_x": observation["tennis_offset_x"],
-                            "target_distance": observation["tennis_distance"]
-                        }
-                        command = robot.controller.approach(approach_observation)
-                        logging.debug(f"接近中: speed_x={command.get('x', 0):.3f}, speed_w={command.get('w', 0):.3f}")
-                    else:
-                        logging.debug(f"网球框边缘越界，正在旋转调整: left={tennis_left_edge}, right={tennis_right_edge}")
-                        search_speed = config.control.search_rotation_speed
-                        if tennis_left_edge == 0:
-                            robot.controller.move(0.0, 0.0,-search_speed)
-                        else:
-                            robot.controller.move(0.0, 0.0, +search_speed)
-                else:
-                    robot.idle()
-            elif state_machine.get_state() == RobotStatus.TRACK_BUCKET:
+            elif current_state == RobotStatus.TRACK_BUCKET:
                 if observation["bucket_detected"]:
                     bucket_left_edge = observation.get("bucket_left_edge", 0)
                     bucket_right_edge = observation.get("bucket_right_edge", 0)
@@ -354,7 +334,6 @@ def main():
                         bucket_offset_x = bucket_center_x - config.device.parameters.frame_width / 2
                         track_observation = {
                             "target_offset_x": bucket_offset_x,
-                            "target_offset_y": 0.0,
                             "target_distance": observation.get("bucket_distance", 1.0)
                         }
                         command = robot.controller.track(track_observation)
@@ -367,8 +346,10 @@ def main():
                         else:
                             robot.controller.move(0.0, 0.0, +search_speed)
                 else:
+                    logging.debug("追踪桶但未检测到，执行搜索旋转")
                     robot.idle()
-            elif state_machine.get_state() in [RobotStatus.PICK, RobotStatus.PUT_BALL]:
+            elif current_state in [RobotStatus.PICK, RobotStatus.PUT_BALL]:
+                logging.debug(f"停止移动: {current_state.value}")
                 robot.controller.stop()
             
             # 统计处理时间

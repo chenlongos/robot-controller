@@ -16,16 +16,14 @@ class BaseController:
         if isinstance(config, ControlConfig):
             self._config_dict = {
                 'search_rotation_speed': config.search_rotation_speed,
-                'kp_angle': config.kp_angle,
                 'kp_dist': config.kp_dist,
+                'kp_angle': config.kp_angle,
+                'ki': config.ki,
+                'kd': config.kd,
                 'wheel_base': config.wheel_base,
                 'max_linear_speed': config.max_linear_speed,
                 'target_x': config.target_x,
                 'target_distance': config.target_distance,
-                'approach_kp': config.approach_kp,
-                'approach_ki': config.approach_ki,
-                'approach_kd': config.approach_kd,
-                'approach_kp_angle': config.approach_kp_angle,
             }
         elif isinstance(config, dict):
             self._config_dict = config.copy()
@@ -46,79 +44,59 @@ class BaseController:
         return {"w": search_speed}
     
     def track(self, observation: Dict) -> Dict[str, float]:
-        """跟踪目标 - 远离目标时快速接近，保持目标在视野中心
-        
-        Args:
-            observation: 包含 target_offset_x, target_offset_y, target_distance 的观测数据
-        
-        Returns:
-            线速度和角速度指令
-        """
-        error_x = observation.get("target_offset_x", 0.0)
-        
-        kp_angle = self._config_dict.get('kp_angle', 0.5)
-        max_linear_speed = self._config_dict.get('max_linear_speed', 0.4)
-        target_x = self._config_dict.get('target_x', 0.0)
-        
-        angular_speed = kp_angle * (error_x - target_x)
-        angular_speed = max(-1.0, min(1.0, angular_speed))
-        
-        offset_ratio = min(abs(error_x) / 320.0, 1.0)
-        speed_factor = 1.0 - offset_ratio * 0.7
-        linear_speed = max_linear_speed * speed_factor
-        
-        self.base.move(linear_speed, 0.0, angular_speed)
-        return {"x": linear_speed, "w": angular_speed}
-    
-    def approach(self, observation: Dict) -> Dict[str, float]:
-        """接近目标 - 近距离时精准停在指定位置（同时控制距离和角度）
-        
-        使用PID控制实现平滑减速和角度对准，避免冲过目标。
-        
+        """跟踪目标 - 统一的追踪/接近控制
+
+        使用PID控制距离，远距离时快速接近，近距离时精准定位；
+        角度控制根据距离自适应调整，保证远距离快速对准、近距离精确对齐。
+
         Args:
             observation: 包含 target_distance, target_offset_x 的观测数据
-        
+
         Returns:
             线速度和角速度指令
         """
         distance = observation.get("target_distance", 1.0)
         error_x = observation.get("target_offset_x", 0.0)
-        
+
         max_speed = self._config_dict.get('max_linear_speed', 0.4)
         target_x = self._config_dict.get('target_x', 0.0)
         target_distance = self._config_dict.get('target_distance', 0.2)
-        
-        kp_dist = self._config_dict.get('approach_kp', 2.0)
-        ki_dist = self._config_dict.get('approach_ki', 0.5)
-        kd_dist = self._config_dict.get('approach_kd', 0.1)
-        kp_angle = self._config_dict.get('approach_kp_angle', 0.5)
-        
-        angular_speed = kp_angle * (error_x - target_x)
-        angular_speed = max(-0.3, min(0.3, angular_speed))
-        
+
+        kp_dist = self._config_dict.get('kp_dist', 2.0)
+        ki_dist = self._config_dict.get('ki', 0.5)
+        kd_dist = self._config_dict.get('kd', 0.1)
+        kp_angle = self._config_dict.get('kp_angle', 0.5)
+
         error_dist = distance - target_distance
-        
+
+        if abs(error_dist) > 0.3:
+            angular_speed = kp_angle * (target_x - error_x)
+            angular_speed = max(-1.0, min(1.0, angular_speed))
+        else:
+            angular_speed = kp_angle * (target_x - error_x)
+            angular_speed = max(-0.3, min(0.3, angular_speed))
+
         max_integral = max_speed / ki_dist if ki_dist > 0 else float('inf')
-        
+
         if error_dist <= 0:
             self._integral = 0.0
         else:
             self._integral += error_dist
             self._integral = max(-max_integral, min(max_integral, self._integral))
-        
+
         if self._prev_distance is not None:
             derivative = distance - self._prev_distance
         else:
             derivative = 0.0
         self._prev_distance = distance
-        
+
         speed = kp_dist * error_dist + ki_dist * self._integral + kd_dist * derivative
-        
+
         linear_speed = max(-max_speed, min(max_speed, speed))
-        
+
         if abs(linear_speed) < 0.001:
             linear_speed = 0.0
-        
+
         self.base.move(linear_speed, 0.0, angular_speed)
         return {"x": linear_speed, "w": angular_speed}
     

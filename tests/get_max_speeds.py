@@ -11,8 +11,8 @@ from src.base.drivers import Esp32C3TtDriver
 
 
 def find_max_motor_speed(driver, wheel_radius, wheel_base):
-    step = 10
-    max_speed_cmd = 100
+    step = 1
+    max_speed_cmd = 25
     stabilization_time = 1.5
     sample_count = 5
     
