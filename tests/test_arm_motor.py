@@ -1,11 +1,11 @@
 """机械臂测试程序"""
 import sys
 import os
-import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config_loader import load_config
+from _robot_select import select_robot
 
 
 def create_arm(config) -> object:
@@ -60,45 +60,58 @@ def test_arm(robot_name: str):
         
         while True:
             print("\n" + "="*50)
-            
-            joint_positions = arm.get_joint_positions()
-            
+
+            try:
+                joint_positions = arm.get_joint_positions()
+            except Exception as e:
+                print(f"读取关节位置失败: {e}")
+                print("  （注意：这里不再显示默认角度以免误判，可重试读取）")
+                joint_positions = None
+
             print("当前关节位置:")
-            for name, pos in zip(arm.JOINT_NAMES, joint_positions):
-                print(f"  {name}: {pos}")
-            
+            if joint_positions is None:
+                for name in arm.JOINT_NAMES:
+                    print(f"  {name}: <读取失败，无效>")
+            else:
+                for name, pos in zip(arm.JOINT_NAMES, joint_positions):
+                    print(f"  {name}: {pos}")
+
             print("\n可用关节:")
             for i, joint in enumerate(arm.JOINT_NAMES):
                 print(f"  {i+1}. {joint}")
-            
+
             user_input = input("\n请输入要操作的关节编号和目标位置（格式: 编号 位置，或输入 exit 退出）: ")
-            
+
             if user_input.strip().lower() == "exit":
                 logger.info("退出测试")
                 break
-            
+
             try:
                 parts = user_input.strip().split()
                 if len(parts) != 2:
                     print("错误: 请输入格式为 '编号 位置'")
                     continue
-                
+
                 joint_index = int(parts[0]) - 1
                 target_position = float(parts[1])
-                
+
                 if joint_index < 0 or joint_index >= len(arm.JOINT_NAMES):
                     print(f"错误: 关节编号必须在 1-{len(arm.JOINT_NAMES)} 之间")
                     continue
-                
+
                 selected_joint = arm.JOINT_NAMES[joint_index]
 
-                joint_positions = list(arm.get_joint_positions())
+                try:
+                    joint_positions = list(arm.get_joint_positions())
+                except Exception as e:
+                    print(f"读取当前关节位置失败，无法安全合并关节状态: {e}")
+                    continue
                 joint_positions[joint_index] = target_position
                 print(f"设置关节 {selected_joint} 位置: {target_position}")
                 arm.move_to_joint_positions(joint_positions)
-                
+
                 print("移动完成")
-                
+
             except ValueError as e:
                 print(f"错误: {e}")
             except Exception as e:
@@ -114,9 +127,8 @@ def test_arm(robot_name: str):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='机械臂测试程序')
-    parser.add_argument('--robot', type=str, default='aka00v4-rock4d', 
-                        help='机器人名称 (默认: aka00v4-rock4d)')
-    args = parser.parse_args()
-    
-    test_arm(args.robot)
+    robot_name = select_robot()
+    if robot_name is None:
+        sys.exit(0)
+
+    test_arm(robot_name)

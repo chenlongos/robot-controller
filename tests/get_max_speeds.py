@@ -7,19 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config_loader import load_config
 from src.base.drivers import Esp32C3TtDriver
-
-
-def list_robots():
-    config_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "config", "robots"
-    )
-    robots = []
-    if os.path.isdir(config_dir):
-        for f in sorted(os.listdir(config_dir)):
-            if f.endswith('.yaml'):
-                robots.append(f[:-5])
-    return robots
+from _robot_select import list_robots, select_robot
 
 
 def find_max_motor_speed(driver, wheel_radius, wheel_base):
@@ -166,36 +154,6 @@ def linear_regression(data_points):
         "intercept": intercept,
         "r_squared": r_squared,
     }
-
-
-def select_robot():
-    robots = list_robots()
-    if not robots:
-        print("错误: 未找到任何机器人配置")
-        return None
-    
-    print("\n可用的机器人列表:")
-    print("-" * 40)
-    for i, name in enumerate(robots, 1):
-        print(f"  {i}. {name}")
-    print("-" * 40)
-    
-    while True:
-        try:
-            choice = input(f"\n请选择机器人 (1-{len(robots)}，默认1): ").strip()
-            if choice == "":
-                idx = 0
-            else:
-                idx = int(choice) - 1
-            if 0 <= idx < len(robots):
-                return robots[idx]
-            else:
-                print(f"请输入 1 到 {len(robots)} 之间的数字")
-        except ValueError:
-            print("请输入有效的数字")
-        except (EOFError, KeyboardInterrupt):
-            print("\n已取消")
-            return None
 
 
 def select_motion_type():

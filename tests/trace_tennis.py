@@ -18,6 +18,7 @@ from src.abstract.base_factory import BaseFactory
 import src.base
 from src.config_loader import load_config
 from src.camera.usb_camera import USBCamera
+from _robot_select import select_robot
 
 from aiohttp import web
 from aiortc import (
@@ -366,7 +367,9 @@ def start_webrtc_server(port: int = 8080):
 def main():
     """主程序入口"""
     global running, video_track
-    robot_name = "aka00v4-lubancat3"
+    robot_name = select_robot()
+    if robot_name is None:
+        return
     config = load_config(robot_name=robot_name)
     
     camera = None

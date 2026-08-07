@@ -34,6 +34,21 @@ class ZP10SArm(ArmInterface):
         "servo1",
         "servo2",
     )
+
+    # get_joint_positions 检测到 _is_moving=True 时的等待超时（秒）。
+    # 主要用于兜底：当 _is_moving 因运动过程异常中断被卡在 True 时，
+    # 避免本方法在等待循环里永久阻塞。
+    _MOVING_WAIT_TIMEOUT: float = 5.0
+
+    # move_to_joint_positions 发送指令后，等待舵机物理到位的参数：
+    # - _REACH_TOLERANCE: 判定到位的角度容差（度）。舵机读数有 1~2° 噪声/系统偏差，
+    #   设 3.0 兼顾"确实到位"与"不会因小偏差永久等待"。
+    # - _REACH_TIMEOUT: 到位等待超时（秒）。超时后不抛异常（指令已发，到位是尽力而为），
+    #   仅 warning，避免舵机卡住时阻塞整个交互。
+    # - _REACH_POLL_INTERVAL: 轮询读取间隔（秒）。
+    _REACH_TOLERANCE: float = 6.0
+    _REACH_TIMEOUT: float = 5.0
+    _REACH_POLL_INTERVAL: float = 0.05
     
     def __init__(self, config: Any):
         """
@@ -61,9 +76,11 @@ class ZP10SArm(ArmInterface):
         
         self._is_connected = False
         self._is_moving = False
-        
-        self._last_joint_positions = [180.0, 180.0, 150.0]
-        
+
+        # 缓存最近一次成功读取的关节位置。读取失败时不更新此缓存，
+        # 也不再把缓存里的旧值/初始占位值当成"本次读数"返回给调用方。
+        self._last_joint_positions: List[float] = []
+
         self.ser = None
         logger.info("ZP10S Arm initialized")
     
@@ -153,55 +170,156 @@ class ZP10SArm(ArmInterface):
     
     def move_to_joint_positions(self, positions: List[float]) -> None:
         """移动到关节位置
-        
+
+        发送目标位置后，会循环读取各舵机实际位置，直到全部进入目标容差
+        `_REACH_TOLERANCE` 内才认为到位并返回（带 `_REACH_TIMEOUT` 超时兜底）。
+        这样方法返回时舵机已物理到位，避免"移动完成"后立刻读到过渡值。
+
+        在整个运动+到位检测期间 `_is_moving=True`，用 try/finally 保证即使
+        中途抛异常也能复位，避免标志位卡死导致 get_joint_positions 永久等待。
+
         Args:
             positions: 三个关节的目标位置列表 [servo0, servo1, servo2]
         """
         if not self.is_connected:
             raise RuntimeError("ZP10S Arm not connected")
-        
+
         if len(positions) != len(self.JOINT_NAMES):
             raise ValueError(f"Expected {len(self.JOINT_NAMES)} joint positions")
-        
+
         self._is_moving = True
-        
-        for i, pos in enumerate(positions):
-            self.set_angle(i, pos)
-        
-        time.sleep(0.05)
-        self._is_moving = False
+        try:
+            for i, pos in enumerate(positions):
+                self.set_angle(i, pos)
+            self._wait_until_reached(positions)
+        finally:
+            self._is_moving = False
+
+    def _wait_until_reached(self, target_positions: List[float]) -> None:
+        """轮询读取实际位置，直到全部舵机进入目标容差内或超时。
+
+        超时仅 warning 不抛异常：移动指令已发送，到位是尽力而为，
+        舵机若存在系统性偏差或卡阻，不应让交互测试直接崩溃。
+        单次读取失败（如串口偶发超时）会在下一轮重试，不计入超时判定。
+        """
+        deadline = time.time() + self._REACH_TIMEOUT
+        last_positions: List[float] = []
+        while time.time() < deadline:
+            try:
+                current = self._read_positions_raw()
+            except RuntimeError as e:
+                # 偶发读取失败，等待下一轮重试，不中断到位检测
+                logger.debug("到位检测中读取失败，重试: %s", e)
+                time.sleep(self._REACH_POLL_INTERVAL)
+                continue
+
+            last_positions = current
+            if all(abs(c - t) <= self._REACH_TOLERANCE
+                   for c, t in zip(current, target_positions)):
+                return
+            time.sleep(self._REACH_POLL_INTERVAL)
+
+        logger.warning(
+            "等待舵机到位超时（>%ss），目标=%s，最后读数=%s；"
+            "可能存在系统偏差或舵机卡阻，继续返回",
+            self._REACH_TIMEOUT, target_positions, last_positions
+        )
     
     def get_joint_positions(self) -> List[float]:
         """获取当前所有关节位置
-        
+
         通过发送PRAD命令读取每个舵机的PWM值，然后转换为角度。
-        
+
         Returns:
-            三个关节的位置列表 [servo0, servo1, servo2]，单位为角度
+            三个关节的位置列表 [servo0, servo1, servo2]，单位为角度。
+            当任一舵机响应为空、解析失败或PWM超出合法范围 [500, 2500] 时，
+            抛出 RuntimeError，不再返回捏造的默认值（原先会把失败的舵机当成
+            PWM=1500 → angle=135.0，导致用户误判真实角度）。
+
+        注意：
+            只有在 `is_moving()` 为 False（机械臂不在运动过程中）时，舵机
+            的实际位置才稳定，读取结果才准确。运动过程中（`move_to_joint_positions`
+            执行期间，`_is_moving=True`）舵机处于过渡状态，PRAD 读到的 PWM 是
+            中间值，不代表最终位置。因此本方法在检测到 `_is_moving=True` 时会
+            **等待运动结束** 再读取；若等待超过 `_MOVING_WAIT_TIMEOUT` 秒仍未
+            结束（通常意味着运动过程异常中断、`_is_moving` 被卡在 True），
+            则抛出 RuntimeError，避免永久阻塞。
         """
         if not self.is_connected:
             raise RuntimeError("ZP10S Arm not connected")
-        
-        positions = []
+
+        if self._is_moving:
+            # 运动过程中舵机处于过渡状态，读到的 PWM 不代表最终位置。
+            # 等待运动结束再读取；带超时保护，防止 _is_moving 因异常被
+            # 卡在 True 时本方法永久阻塞。
+            deadline = time.time() + self._MOVING_WAIT_TIMEOUT
+            while self._is_moving:
+                if time.time() > deadline:
+                    raise RuntimeError(
+                        f"等待 ZP10S 运动结束超时（>{self._MOVING_WAIT_TIMEOUT}s），"
+                        "关节位置不可信；请检查运动是否异常中断"
+                    )
+                time.sleep(0.01)
+
+        positions = self._read_positions_raw()
+        self._last_joint_positions = list(positions)
+        return positions
+
+    def _read_positions_raw(self) -> List[float]:
+        """裸读取各舵机位置（PRAD→角度），不做连接/运动状态检查，不更新缓存。
+
+        供 get_joint_positions（等待运动后读取）和 _wait_until_reached（运动中
+        轮询到位）复用同一套解析与校验逻辑。任一舵机响应为空、解析失败或
+        PWM 超出 [500, 2500] 时整体抛 RuntimeError，错误细节含舵机号与原始响应，
+        不再返回捏造的默认值（原先会把失败的舵机当成 PWM=1500 → angle=135.0）。
+        """
+        positions: List[float] = []
+        errors: List[str] = []
+
         for servo_id in range(3):
             response = self._send_cmd(servo_id, "PRAD")
-            
-            pwm_value = 1500
-            if response:
-                parts = response.strip().split('P')
-                if len(parts) >= 2:
-                    pwm_part = parts[1].split('!')[0]
-                    try:
-                        pwm_value = int(pwm_part)
-                    except ValueError:
-                        pass
-            
+
+            if not response:
+                errors.append(f"servo{servo_id}: 无响应（串口超时或未收到返回）")
+                continue
+
+            parts = response.strip().split('P')
+            if len(parts) < 2:
+                errors.append(
+                    f"servo{servo_id}: 响应格式错误（缺少'P'分隔符），原始响应：{response!r}"
+                )
+                continue
+
+            pwm_part = parts[1].split('!')[0]
+            try:
+                pwm_value = int(pwm_part)
+            except ValueError:
+                errors.append(
+                    f"servo{servo_id}: PWM解析失败，pwm片段={pwm_part!r}，原始响应：{response!r}"
+                )
+                continue
+
+            # ZP10S 舵机 PWM 合法范围与发送时一致：[500, 2500]。
+            # 越界值直接判错，不做 clamp 后当有效值返回。
+            if pwm_value < 500 or pwm_value > 2500:
+                errors.append(
+                    f"servo{servo_id}: PWM={pwm_value} 超出合法范围 [500, 2500]，"
+                    f"原始响应：{response!r}"
+                )
+                continue
+
             angle = ((pwm_value - 500) / 2000.0) * 270.0
-            angle = max(0.0, min(270.0, angle))
             positions.append(angle)
-        
-        self._last_joint_positions = positions
-        return positions.copy()
+
+        if errors:
+            # 失败时不更新缓存，避免用旧值冒充新值；同时记录日志便于排查。
+            logger.warning("读取关节位置失败: %s", "; ".join(errors))
+            raise RuntimeError(
+                "ZP10S 关节位置读取失败（返回值不可信，不再用默认135°填充）："
+                + "; ".join(errors)
+            )
+
+        return positions
     
     def get_gripper_position(self) -> float:
         """获取夹爪位置

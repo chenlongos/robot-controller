@@ -1,13 +1,13 @@
 """机械臂控制器测试程序"""
 import sys
 import os
-import argparse
 import ast
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config_loader import load_config
 from src.controller.arm_controller import ArmController
+from _robot_select import select_robot
 
 
 def create_arm(config) -> object:
@@ -185,9 +185,8 @@ def test_arm_controller(robot_name: str):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='机械臂控制器测试程序')
-    parser.add_argument('--robot', type=str, default='aka00v4-lubancat3', 
-                        help='机器人名称 (默认: aka00v4-rock4d)')
-    args = parser.parse_args()
-    
-    test_arm_controller(args.robot)
+    robot_name = select_robot()
+    if robot_name is None:
+        sys.exit(0)
+
+    test_arm_controller(robot_name)

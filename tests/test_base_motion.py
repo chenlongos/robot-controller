@@ -5,17 +5,18 @@ import time
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config_loader import load_config
 from src.abstract.base_factory import BaseFactory
 import src.base
+from _robot_select import select_robot
 
 
 class BaseMotionTest:
     """底盘运动测试类"""
-    
-    def __init__(self, robot_name: str = "aka01b"):
+
+    def __init__(self, robot_name: str):
         """初始化测试"""
         self.config = load_config(robot_name)
         self.base = None
@@ -121,11 +122,9 @@ class BaseMotionTest:
 
 
 if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="底盘运动测试程序")
-    parser.add_argument("-r", "--robot", default="aka01b", help="机器人名称 (默认: aka01b)")
-    args = parser.parse_args()
-    
-    test = BaseMotionTest(args.robot)
+    robot_name = select_robot()
+    if robot_name is None:
+        sys.exit(0)
+
+    test = BaseMotionTest(robot_name)
     test.run()

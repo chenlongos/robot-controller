@@ -8,17 +8,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.config_loader import load_config
 from src.controller.vision_module import VisionModule
 from src.camera.usb_camera import USBCamera
+from _robot_select import select_robot
 
 
 def main():
     """主程序入口"""
-    if len(sys.argv) < 2:
-        print("用法: python calibrate_distance.py <机器人名称>")
-        print("示例: python calibrate_distance.py aka01b")
-        sys.exit(1)
-    
-    robot_name = sys.argv[1]
-    
+    robot_name = select_robot()
+    if robot_name is None:
+        return
+
     print(f"正在加载 {robot_name} 的配置...")
     config = load_config(robot_name=robot_name)
     
