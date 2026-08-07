@@ -118,6 +118,8 @@ class DifferentialBase(BaseInterface):
 
         self.left_pid = PIDController(kp, ki, kd, output_limit, max_rate)
         self.right_pid = PIDController(kp, ki, kd, output_limit, max_rate)
+        self.linear_k = 7   # 补偿当前小车的线速度，根据实际情况调整
+        self.rotation_k = 8    # 补偿当前小车的旋转速度，根据实际情况调整
 
         self.last_time = time.perf_counter()
         self.vx = 0.0  # 前后速度 (m/s)
@@ -165,9 +167,19 @@ class DifferentialBase(BaseInterface):
             left_pwm = self.left_pid.compute(target_left, actual_left, dt)
             right_pwm = self.right_pid.compute(target_right, actual_right, dt)
 
+            # 根据vx/vw判断运动类型：直线主导用linear_k，旋转主导用rotation_k
+            if abs(self.vx) > abs(self.vw * self.wheel_base / 2):
+                base_comp = self.linear_k
+            else:
+                base_comp = self.rotation_k
+
+            # 沿每个轮子PID输出的方向施加补偿
+            left_comp = base_comp if left_pwm > 0 else (-base_comp if left_pwm < 0 else 0)
+            right_comp = base_comp if right_pwm > 0 else (-base_comp if right_pwm < 0 else 0)
+
             # 还原到电机坐标系：乘direction_forward，再传给set_speeds()
-            left_pwm_motor = left_pwm * self.direction_forward
-            right_pwm_motor = right_pwm * self.direction_forward
+            left_pwm_motor = (left_pwm + left_comp) * self.direction_forward
+            right_pwm_motor = (right_pwm + right_comp) * self.direction_forward
 
             # 发送PWM指令
             self.driver.set_speeds(
@@ -175,7 +187,8 @@ class DifferentialBase(BaseInterface):
 
             logger.debug(f"DifferentialBase: target=({target_left:.1f},{target_right:.1f})rpm, "
                          f"actual=({actual_left:.1f},{actual_right:.1f})rpm, "
-                         f"pwm=({left_pwm_motor:.1f},{right_pwm_motor:.1f})")
+                         f"pwm=({left_pwm_motor:.1f},{right_pwm_motor:.1f}), "
+                         f"comp={base_comp}(vx={self.vx:.3f},vw={self.vw:.3f})")
 
             time.sleep(self.LOOP_TIME)
 

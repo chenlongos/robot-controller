@@ -186,7 +186,7 @@ def test_arm_controller(robot_name: str):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='机械臂控制器测试程序')
-    parser.add_argument('--robot', type=str, default='aka00v4-rock4d', 
+    parser.add_argument('--robot', type=str, default='aka00v4-lubancat3', 
                         help='机器人名称 (默认: aka00v4-rock4d)')
     args = parser.parse_args()
     

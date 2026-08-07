@@ -1,4 +1,3 @@
-import argparse
 import sys
 import os
 import math
@@ -10,13 +9,26 @@ from src.config_loader import load_config
 from src.base.drivers import Esp32C3TtDriver
 
 
+def list_robots():
+    config_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "config", "robots"
+    )
+    robots = []
+    if os.path.isdir(config_dir):
+        for f in sorted(os.listdir(config_dir)):
+            if f.endswith('.yaml'):
+                robots.append(f[:-5])
+    return robots
+
+
 def find_max_motor_speed(driver, wheel_radius, wheel_base):
     step = 1
-    max_speed_cmd = 25
+    max_speed_cmd = 10
     stabilization_time = 1.5
     sample_count = 5
     
-    print("\n正在测试电机速度特性...")
+    print("\n正在测试直线运动速度特性...")
     print("=" * 60)
     
     best_rpm = 0
@@ -64,6 +76,66 @@ def find_max_motor_speed(driver, wheel_radius, wheel_base):
     }
 
 
+def find_max_rotational_speed(driver, wheel_radius, wheel_base):
+    step = 1
+    max_speed_cmd = 15
+    stabilization_time = 1.5
+    sample_count = 5
+    
+    print("\n正在测试旋转运动速度特性...")
+    print("=" * 60)
+    
+    best_rpm = 0
+    best_cmd = 0
+    data_points = []
+    
+    for speed_cmd in range(0, max_speed_cmd + 1, step):
+        driver.set_speeds(speed_cmd, -speed_cmd)
+        time.sleep(stabilization_time)
+        
+        rpm_sum = 0
+        valid_samples = 0
+        for i in range(sample_count):
+            left_rpm, right_rpm = driver.get_rpm()
+            left_rpm = abs(left_rpm)
+            right_rpm = abs(right_rpm)
+            if left_rpm != 0 or right_rpm != 0:
+                rpm_sum += (left_rpm + right_rpm) / 2
+                valid_samples += 1
+            time.sleep(0.1)
+        
+        if valid_samples > 0:
+            avg_rpm = rpm_sum / valid_samples
+        else:
+            avg_rpm = 0
+        
+        data_points.append((speed_cmd, avg_rpm))
+        
+        if avg_rpm > 0:
+            v_edge = avg_rpm * 2 * math.pi * wheel_radius / 60
+            omega = 2 * v_edge / wheel_base
+        else:
+            omega = 0
+        
+        print(f"  速度指令: {speed_cmd:4d} -> 实际转速: {avg_rpm:6.2f} RPM -> 角速度: {omega:.4f} rad/s")
+        
+        if avg_rpm > best_rpm:
+            best_rpm = avg_rpm
+            best_cmd = speed_cmd
+        elif avg_rpm < best_rpm * 0.9 and speed_cmd > best_cmd + step * 2:
+            print(f"\n  检测到转速下降，停止测试")
+            # break
+    
+    driver.stop()
+    time.sleep(0.5)
+    
+    return {
+        "max_motor_rpm": best_rpm,
+        "max_speed_cmd": best_cmd,
+        "data_points": data_points,
+    }
+
+
 def linear_regression(data_points):
     n = len(data_points)
     if n < 2:
@@ -96,29 +168,83 @@ def linear_regression(data_points):
     }
 
 
-def main():
-    parser = argparse.ArgumentParser(description="通过实际驱动电机获取机器人底盘的最大速度")
-    parser.add_argument("robot_name", type=str, nargs="?", default="aka00v4-k3",
-                        help="机器人配置名称（默认：aka00v4-k3）")
-    parser.add_argument("--test-time", type=float, default=0.5,
-                        help="每个速度档位的稳定时间（秒）")
-    args = parser.parse_args()
+def select_robot():
+    robots = list_robots()
+    if not robots:
+        print("错误: 未找到任何机器人配置")
+        return None
+    
+    print("\n可用的机器人列表:")
+    print("-" * 40)
+    for i, name in enumerate(robots, 1):
+        print(f"  {i}. {name}")
+    print("-" * 40)
+    
+    while True:
+        try:
+            choice = input(f"\n请选择机器人 (1-{len(robots)}，默认1): ").strip()
+            if choice == "":
+                idx = 0
+            else:
+                idx = int(choice) - 1
+            if 0 <= idx < len(robots):
+                return robots[idx]
+            else:
+                print(f"请输入 1 到 {len(robots)} 之间的数字")
+        except ValueError:
+            print("请输入有效的数字")
+        except (EOFError, KeyboardInterrupt):
+            print("\n已取消")
+            return None
 
+
+def select_motion_type():
+    print("\n请选择运动类型:")
+    print("  1. 直线运动")
+    print("  2. 旋转运动")
+    
+    while True:
+        try:
+            choice = input("\n请选择 (1-2，默认1): ").strip()
+            if choice == "" or choice == "1":
+                return "linear"
+            elif choice == "2":
+                return "rotational"
+            else:
+                print("请输入 1 或 2")
+        except (EOFError, KeyboardInterrupt):
+            print("\n已取消")
+            return None
+
+
+def main():
+    robot_name = select_robot()
+    if robot_name is None:
+        return 0
+    
+    motion_type = select_motion_type()
+    if motion_type is None:
+        return 0
+    
     config = None
     driver = None
     
     try:
-        config = load_config(args.robot_name)
+        config = load_config(robot_name)
         
         base_config = config.device.hardware.base
         driver_type = base_config.driver
         wheel_radius = base_config.wheel_radius
         wheel_base = base_config.wheel_base
         
-        print("=" * 60)
-        print(f"机器人: {args.robot_name}")
+        print("\n" + "=" * 60)
+        print(f"机器人: {robot_name}")
         print(f"底盘类型: {base_config.type}")
         print(f"驱动类型: {driver_type}")
+        if motion_type == "linear":
+            print("运动类型: 直线运动")
+        else:
+            print("运动类型: 旋转运动")
         print("=" * 60)
         
         if driver_type != "esp32_c3_tt":
@@ -145,7 +271,10 @@ def main():
             print(f"    请检查串口设备 {uart_port} 是否可用")
             return 1
         
-        result = find_max_motor_speed(driver, wheel_radius, wheel_base)
+        if motion_type == "linear":
+            result = find_max_motor_speed(driver, wheel_radius, wheel_base)
+        else:
+            result = find_max_rotational_speed(driver, wheel_radius, wheel_base)
         
         print("\n" + "=" * 60)
         print("实际测量结果:")
@@ -187,51 +316,89 @@ def main():
         else:
             print("  数据点不足，无法进行线性回归分析")
         
+        max_rpm = result['max_motor_rpm']
+        
         print("\n" + "=" * 60)
         print("计算过程:")
         print("=" * 60)
         
-        print("\n1. 最大线速度计算:")
-        print(f"   公式: v_max = (RPM_max × 2πr) / 60")
-        print(f"   代入: v_max = ({result['max_motor_rpm']:.2f} × 2 × π × {wheel_radius}) / 60")
-        max_linear_speed = (result['max_motor_rpm'] * 2 * math.pi * wheel_radius) / 60
-        print(f"   结果: v_max = {max_linear_speed:.4f} m/s")
+        if motion_type == "linear":
+            print("\n1. 最大线速度计算:")
+            print(f"   公式: v_max = (RPM_max × 2πr) / 60")
+            print(f"   代入: v_max = ({max_rpm:.2f} × 2 × π × {wheel_radius}) / 60")
+            max_linear_speed = (max_rpm * 2 * math.pi * wheel_radius) / 60
+            print(f"   结果: v_max = {max_linear_speed:.4f} m/s")
+            
+            print("\n2. 最大角速度计算:")
+            print(f"   公式: ω_max = (v_max × 2) / L")
+            print(f"   其中: v_max = 最大线速度 = {max_linear_speed:.4f} m/s")
+            print(f"         L = 轮距 = {wheel_base} m")
+            print(f"   代入: ω_max = ({max_linear_speed:.4f} × 2) / {wheel_base}")
+            max_angular_speed = max_linear_speed * 2 / wheel_base
+            print(f"   结果: ω_max = {max_angular_speed:.4f} rad/s")
+            
+            print("\n3. 与配置文件对比:")
+            print(f"   配置最大线速度: {base_config.max_linear_speed} m/s")
+            print(f"   实际最大线速度: {max_linear_speed:.4f} m/s")
+            print(f"   差异: {(max_linear_speed - base_config.max_linear_speed):+.4f} m/s")
+            print(f"   偏差率: {((max_linear_speed - base_config.max_linear_speed) / base_config.max_linear_speed * 100):+.2f}%")
+            
+            print(f"\n   配置最大角速度: {base_config.max_angular_speed} rad/s")
+            print(f"   实际最大角速度: {max_angular_speed:.4f} rad/s")
+            print(f"   差异: {(max_angular_speed - base_config.max_angular_speed):+.4f} rad/s")
+            print(f"   偏差率: {((max_angular_speed - base_config.max_angular_speed) / base_config.max_angular_speed * 100):+.2f}%")
+            
+            print("\n" + "=" * 60)
+            print("最终结果:")
+            print("=" * 60)
+            print(f"电机最大转速: {max_rpm:.2f} RPM")
+            print(f"最大线速度: {max_linear_speed:.4f} m/s")
+            print(f"最大角速度(由直线推算): {max_angular_speed:.4f} rad/s")
+            if regression:
+                print(f"线性相关系数 R²: {regression['r_squared']:.6f}")
+            print("=" * 60)
         
-        print("\n2. 最大角速度计算:")
-        print(f"   公式: ω_max = (v_max × 2) / L")
-        print(f"   其中: v_max = 最大线速度 = {max_linear_speed:.4f} m/s")
-        print(f"         L = 轮距 = {wheel_base} m")
-        print(f"   代入: ω_max = ({max_linear_speed:.4f} × 2) / {wheel_base}")
-        max_angular_speed = max_linear_speed * 2 / wheel_base
-        print(f"   结果: ω_max = {max_angular_speed:.4f} rad/s")
-        
-        print("\n3. 与配置文件对比:")
-        print(f"   配置最大线速度: {base_config.max_linear_speed} m/s")
-        print(f"   实际最大线速度: {max_linear_speed:.4f} m/s")
-        print(f"   差异: {(max_linear_speed - base_config.max_linear_speed):+.4f} m/s")
-        print(f"   偏差率: {((max_linear_speed - base_config.max_linear_speed) / base_config.max_linear_speed * 100):+.2f}%")
-        
-        print(f"\n   配置最大角速度: {base_config.max_angular_speed} rad/s")
-        print(f"   实际最大角速度: {max_angular_speed:.4f} rad/s")
-        print(f"   差异: {(max_angular_speed - base_config.max_angular_speed):+.4f} rad/s")
-        print(f"   偏差率: {((max_angular_speed - base_config.max_angular_speed) / base_config.max_angular_speed * 100):+.2f}%")
-        
-        print("\n" + "=" * 60)
-        print("最终结果:")
-        print("=" * 60)
-        print(f"电机最大转速: {result['max_motor_rpm']:.2f} RPM")
-        print(f"最大线速度: {max_linear_speed:.4f} m/s")
-        print(f"最大角速度: {max_angular_speed:.4f} rad/s")
-        if regression:
-            print(f"线性相关系数 R²: {regression['r_squared']:.6f}")
-        print("=" * 60)
+        else:
+            print("\n1. 轮缘线速度计算:")
+            print(f"   公式: v_max = (RPM_max × 2πr) / 60")
+            print(f"   代入: v_max = ({max_rpm:.2f} × 2 × π × {wheel_radius}) / 60")
+            max_linear_speed = (max_rpm * 2 * math.pi * wheel_radius) / 60
+            print(f"   结果: v_max = {max_linear_speed:.4f} m/s")
+            
+            print("\n2. 最大角速度计算:")
+            print(f"   公式: ω_max = (v_max × 2) / L")
+            print(f"   其中: v_max = 轮缘线速度 = {max_linear_speed:.4f} m/s")
+            print(f"         L = 轮距 = {wheel_base} m")
+            print(f"   代入: ω_max = ({max_linear_speed:.4f} × 2) / {wheel_base}")
+            max_angular_speed = max_linear_speed * 2 / wheel_base
+            print(f"   结果: ω_max = {max_angular_speed:.4f} rad/s")
+            
+            print("\n3. 与配置文件对比:")
+            print(f"   配置最大角速度: {base_config.max_angular_speed} rad/s")
+            print(f"   实测最大角速度: {max_angular_speed:.4f} rad/s")
+            print(f"   差异: {(max_angular_speed - base_config.max_angular_speed):+.4f} rad/s")
+            print(f"   偏差率: {((max_angular_speed - base_config.max_angular_speed) / base_config.max_angular_speed * 100):+.2f}%")
+            
+            print(f"\n   对应线速度(参考): {max_linear_speed:.4f} m/s")
+            print(f"   配置最大线速度: {base_config.max_linear_speed} m/s")
+            print(f"   偏差率: {((max_linear_speed - base_config.max_linear_speed) / base_config.max_linear_speed * 100):+.2f}%")
+            
+            print("\n" + "=" * 60)
+            print("最终结果:")
+            print("=" * 60)
+            print(f"电机最大转速: {max_rpm:.2f} RPM")
+            print(f"最大角速度: {max_angular_speed:.4f} rad/s")
+            print(f"轮缘线速度: {max_linear_speed:.4f} m/s")
+            if regression:
+                print(f"线性相关系数 R²: {regression['r_squared']:.6f}")
+            print("=" * 60)
         
         return 0
             
     except FileNotFoundError as e:
         print(f"错误: 找不到机器人配置文件: {e}")
         print("可用的机器人配置:")
-        config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        list_robots()
         return 1
     except RuntimeError as e:
         print(f"\n错误: {e}")

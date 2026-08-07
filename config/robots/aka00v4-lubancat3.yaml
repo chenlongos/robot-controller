@@ -13,8 +13,8 @@ HARDWARE:
     BAUDRATE: 115200
     
     CONTROL:
-      KP_DIST: 1.1
-      KP_ANGLE: 0.5
+      KP_DIST: 1.5
+      KP_ANGLE: 1.0
       KI: 0.01
       KD: 0.01
       MAX_LINEAR_SPEED: 0.4
