@@ -1,4 +1,4 @@
-robot_type: aka00v4-rk3576
+robot_type: aka00v4
 calibration_type: distance
 formula: D(cm) = M / P + C
 M: 4893.281164424221

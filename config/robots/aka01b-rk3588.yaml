@@ -1,0 +1,12 @@
+# config/robots/aka01b-rk3588.yaml
+# AKA-01B-RK3588开发板特定配置
+# 共有配置见 aka01b-common.yaml
+
+HARDWARE:
+  MODE: "rk3588"
+  MODEL_FORMAT: "rknn"
+  ARM:
+    PORT: "/dev/ttyUSB0"
+
+VISION:
+  MODEL_NAME: "yolov8n-fp16-tennis.rknn"

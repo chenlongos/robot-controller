@@ -1,67 +1,14 @@
 # config/robots/aka00v4-k3.yaml
-# AKA-00V4-K3机器人特定配置（ESP32-C3 TT底盘，ZP10S机械臂）
+# AKA-00V4-K3开发板特定配置
+# 共有配置见 aka00v4-common.yaml
 
 HARDWARE:
   MODE: "k3"
-  MODEL_FORMAT: ""
-  
+  MODEL_FORMAT: "rknn"
   BASE:
-    TYPE: "differential"
-    WHEEL_RADIUS: 0.03
-    WHEEL_BASE: 0.18
     PORT: "/dev/ttyACM0"
-    BAUDRATE: 115200
-    
-    CONTROL:
-      KP_DIST: 0.8
-      KP_ANGLE: 0.005
-      KI: 0.01
-      KD: 0.01
-      MAX_LINEAR_SPEED: 0.4
-      MAX_ANGULAR_SPEED: 1.0
-      SEARCH_ROTATION_SPEED: 0.3
-
-    DRIVER:
-      TYPE: "esp32_c3_tt"
-      KP: 0.5
-      KI: 0.1
-      KD: 0.05
-      MAX_RATE: 5
-      MIN_PWM: 20
-      MAX_PWM: 60
-      PPR: 4680
-      PWM_FREQ: 20000
-
-  CAMERA:
-    TYPE: "usb"
-    DEVICE_ID: 0
-    RESOLUTION: [640, 480]
-    FRAME_RATE: 30
-
   ARM:
-    TYPE: "zp10s"
     PORT: "/dev/ttyUSB0"
-    BAUDRATE: 115200
 
-# 视觉参数
 VISION:
   MODEL_NAME: "yolov8n-int8-tennis.rknn"
-  CONFIDENCE_THRESHOLD: 0.5
-  NMS_THRESHOLD: 0.45
-  INPUT_SIZE: 640
-  TENNIS_WIDTH_FAR: 20
-  TENNIS_WIDTH_NEAR: 150
-
-# 状态机参数
-STATEMACHINE:
-  TARGET_X: 0.0
-  TARGET_DISTANCE: 0.2
-  THRESHOLD_X: 50.0
-  THRESHOLD_D: 0.01
-  GRIP_THRESHOLD: 100
-  REACH_COUNT_THRESHOLD: 10
-  BUCKET_EDGE_THRESHOLD: 20
-
-# 设备特定参数
-PARAMETERS:
-  FRAME_WIDTH: 640

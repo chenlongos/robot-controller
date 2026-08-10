@@ -19,8 +19,8 @@ from src.web.webrtc_server import start_webrtc_server, push_frame, is_available 
 import src.base
 import src.camera
 
-# 加载配置，默认机器人是 aka00v4-lubancat3
-config = load_config(robot_name="aka00v4-lubancat3")
+# 加载配置，robot_id 从 config/common.yaml 自动读取
+config = load_config()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -34,7 +34,8 @@ logging.basicConfig(
     ]
 )
 
-def load_calibration_params(robot_type: str, config_dir: str = 'config') -> dict:
+def load_calibration_params(robot_name: str, config_dir: str = 'config') -> dict:
+    robot_type = robot_name.split("-")[0]
     calibration_file = os.path.join(config_dir, f'calibration_{robot_type}_distance.yaml')
     
     if os.path.exists(calibration_file):

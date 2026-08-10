@@ -91,11 +91,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-def load_calibration_params(robot_type: str, config_dir: str = 'config') -> dict:
+def load_calibration_params(robot_name: str, config_dir: str = 'config') -> dict:
     """从校准文件加载距离计算参数
     
     Args:
-        robot_type: 机器人类型（如 'aka01b'）
+        robot_name: 机器人名称（如 'aka01b-rock4d'）
         config_dir: 校准文件目录
         
     Returns:
@@ -104,6 +104,7 @@ def load_calibration_params(robot_type: str, config_dir: str = 'config') -> dict
     import os
     import yaml
     
+    robot_type = robot_name.split("-")[0]
     calibration_file = os.path.join(config_dir, f'calibration_{robot_type}_distance.yaml')
     
     if os.path.exists(calibration_file):

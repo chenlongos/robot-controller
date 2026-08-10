@@ -435,7 +435,7 @@ class VisionModule:
         
         return frame_copy
     
-    def calibrate_distance(self, robot_type: str, robot: object, 
+    def calibrate_distance(self, robot_name: str, robot: object, 
                           distances: list = [0.2, 0.3, 0.5, 0.8, 1.0, 1.5, 2.0],
                           config_dir: str = 'config') -> bool:
         """
@@ -445,7 +445,7 @@ class VisionModule:
         通过在不同距离放置网球，收集检测框宽度，拟合得到 M 和 C。
         
         Args:
-            robot_type: 机器人类型（如 'aka01b'）
+            robot_name: 机器人名称（如 'aka01b-rock4d'）
             robot: 机器人对象，需实现 camera 属性和 capture() 方法返回帧
             distances: 校准距离列表（米）
             config_dir: 校准文件保存目录
@@ -555,6 +555,7 @@ class VisionModule:
         print(f"  C = {C:.4f}")
         print(f"  公式: D(cm) = {M:.4f} / P + {C:.4f}")
         
+        robot_type = robot_name.split("-")[0]
         calibration_file = os.path.join(config_dir, f'calibration_{robot_type}_distance.yaml')
         
         calibration_data = {

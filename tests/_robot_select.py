@@ -8,7 +8,10 @@ import os
 
 
 def list_robots():
-    """扫描 config/robots 目录，返回可用机器人名称列表（去除 .yaml 后缀）。"""
+    """扫描 config/robots 目录，返回可用机器人名称列表（去除 .yaml 后缀）。
+    
+    过滤掉 *-common.yaml 共有配置文件，只返回可选择的开发板配置。
+    """
     config_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "config", "robots"
@@ -16,7 +19,7 @@ def list_robots():
     robots = []
     if os.path.isdir(config_dir):
         for f in sorted(os.listdir(config_dir)):
-            if f.endswith('.yaml'):
+            if f.endswith('.yaml') and not f.endswith('-common.yaml'):
                 robots.append(f[:-5])
     return robots
 

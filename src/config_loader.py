@@ -2,7 +2,8 @@
 
 import yaml
 import os
-from typing import Dict, Any, List, Optional
+import copy
+from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 
 @dataclass
@@ -157,28 +158,93 @@ class RobotConfig:
     statemachine: StateMachineConfig
     device: DeviceConfig
 
+
+def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """递归合并两个字典，override的值覆盖base中的值"""
+    result = copy.deepcopy(base)
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = deep_merge(result[key], value)
+        else:
+            result[key] = copy.deepcopy(value)
+    return result
+
+
 def load_yaml_file(file_path: str) -> Dict[str, Any]:
     """加载单个YAML文件"""
     with open(file_path, 'r') as f:
         return yaml.safe_load(f)
 
+
 def load_common_config(config_dir: str = "config") -> Dict[str, Any]:
-    """加载通用配置"""
+    """加载通用配置 (config/common.yaml)"""
     common_path = os.path.join(config_dir, "common.yaml")
     return load_yaml_file(common_path)
 
+
 def load_robot_config(robot_name: str, config_dir: str = "config") -> Dict[str, Any]:
-    """加载机器人特定配置"""
+    """加载机器人特定配置 (config/robots/<robot_name>.yaml)"""
     robot_path = os.path.join(config_dir, "robots", f"{robot_name}.yaml")
     return load_yaml_file(robot_path)
 
-def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> RobotConfig:
-    """加载完整配置"""
+
+def parse_robot_id(robot_id: str) -> Tuple[str, str]:
+    """解析 ROBOT_ID 为 (robot_type, board_name)
+    
+    规则:
+      - "aka00v4-lubancat3" -> ("aka00v4", "lubancat3")
+      - "aka01b-rk3588" -> ("aka01b", "rk3588")
+    
+    Raises:
+        ValueError: 如果 ROBOT_ID 不包含 '-' 分隔符
+    """
+    parts = robot_id.split("-", 1)
+    if len(parts) != 2:
+        raise ValueError(
+            f"ROBOT_ID '{robot_id}' 格式错误，应为 '<robot_type>-<board_name>' 格式"
+        )
+    return parts[0], parts[1]
+
+
+def load_config(robot_name: Optional[str] = None, config_dir: str = "config") -> RobotConfig:
+    """加载完整配置
+    
+    Args:
+        robot_name: 机器人ID (如 "aka00v4-lubancat3")。若为None则从 config/common.yaml 读取 ROBOT_ID。
+        config_dir: 配置文件目录
+    
+    加载逻辑:
+        1. 从 config/common.yaml 获取 ROBOT_ID (若参数未提供)
+        2. 解析 ROBOT_ID: <robot_type>-<board_name>
+        3. 加载 <robot_type>-common.yaml (共有配置)
+        4. 加载 <robot_type>-<board_name>.yaml (开发板独有配置)
+        5. 深度合并：开发板配置覆盖共有配置
+        6. 构建 RobotConfig
+    """
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     full_config_dir = os.path.join(base_dir, config_dir)
     
     common = load_common_config(full_config_dir)
-    robot = load_robot_config(robot_name, full_config_dir)
+    
+    robot_id = robot_name
+    if robot_id is None:
+        robot_id = common['SYSTEM']['ROBOT_ID']
+    
+    robot_type, board_name = parse_robot_id(robot_id)
+    
+    config_dir_robots = os.path.join(full_config_dir, "robots")
+    common_path = os.path.join(config_dir_robots, f"{robot_type}-common.yaml")
+    board_path = os.path.join(config_dir_robots, f"{robot_type}-{board_name}.yaml")
+    
+    if not os.path.exists(common_path):
+        raise FileNotFoundError(f"共有配置文件不存在: {common_path}")
+    if not os.path.exists(board_path):
+        raise FileNotFoundError(f"开发板配置文件不存在: {board_path}")
+    
+    merged_robot = load_yaml_file(common_path)
+    board_data = load_yaml_file(board_path)
+    merged_robot = deep_merge(merged_robot, board_data)
+    robot = merged_robot
     
     base_data = robot['HARDWARE']['BASE']
     base_type = base_data['TYPE']
@@ -192,7 +258,6 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
     if driver_type == "d24a_jgb37":
         motors_config = []
         for motor_data in base_data['MOTORS']:
-            # 统一方向配置：优先使用 direction_forward，兼容旧的 direction_inverted
             if 'direction_forward' in motor_data:
                 dir_fwd = motor_data['direction_forward']
             elif 'direction_inverted' in motor_data:
@@ -255,7 +320,7 @@ def load_config(robot_name: str = "aka01b", config_dir: str = "config") -> Robot
     
     return RobotConfig(
         system=SystemConfig(
-            robot_id=common['SYSTEM']['ROBOT_ID'],
+            robot_id=robot_id,
             log_level=common['SYSTEM']['LOG_LEVEL'],
             hardware_timeout=common['SYSTEM']['HARDWARE_TIMEOUT'],
             max_retries=common['SYSTEM']['MAX_RETRIES'],

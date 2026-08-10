@@ -1,17 +1,15 @@
-# config/robots/aka01b.yaml
-# AKA-01B机器人特定配置
+# config/robots/aka01b-common.yaml
+# AKA-01B系列机器人共有配置（所有开发板共享）
+# 开发板独有配置（HARDWARE.MODE, MODEL_FORMAT, ARM.PORT, VISION.MODEL_NAME）
+# 见各 <board>.yaml 文件
 
-# 硬件配置
 HARDWARE:
-  MODE: "rk3588"
-  MODEL_FORMAT: "rknn"
-  
   BASE:
     TYPE: "differential"
     DRIVER: "d24a_jgb37"
     WHEEL_RADIUS: 0.042
     WHEEL_BASE: 0.195
-    
+
     CONTROL:
       KP_DIST: 0.8
       KP_ANGLE: 0.005
@@ -69,14 +67,12 @@ HARDWARE:
 
   ARM:
     TYPE: "so101"
-    PORT: "/dev/ttyUSB0"
     USE_DEGREES: false
     DISABLE_TORQUE_ON_DISCONNECT: true
     MAX_RELATIVE_TARGET: 5.0
 
-# 视觉参数
+# 视觉参数（共有部分）
 VISION:
-  MODEL_NAME: "yolov8n-fp16-tennis.rknn"
   CONFIDENCE_THRESHOLD: 0.5
   NMS_THRESHOLD: 0.45
   INPUT_SIZE: 640

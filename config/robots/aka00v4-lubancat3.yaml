@@ -1,65 +1,14 @@
 # config/robots/aka00v4-lubancat3.yaml
-# AKA-00V4-LUBANAT3机器人特定配置（ESP32-C3 TT底盘，ZP10S机械臂）
+# AKA-00V4-LUBANCAT3开发板特定配置
+# 共有配置见 aka00v4-common.yaml
 
 HARDWARE:
   MODE: "rk3576"
   MODEL_FORMAT: "rknn"
-  
   BASE:
-    TYPE: "differential"
-    WHEEL_RADIUS: 0.03
-    WHEEL_BASE: 0.18
     PORT: "/dev/ttyS3"
-    BAUDRATE: 115200
-    
-    CONTROL:
-      KP_DIST: 1.5
-      KP_ANGLE: 1.0
-      KI: 0.01
-      KD: 0.01
-      MAX_LINEAR_SPEED: 0.4
-      MAX_ANGULAR_SPEED: 3
-      SEARCH_ROTATION_SPEED: 1.5
-
-    DRIVER:
-      TYPE: "esp32_c3_tt"
-      KP: 0.5
-      KI: 0.01
-      KD: 0.0
-      MAX_RATE: 5
-      MIN_PWM: 20
-      MAX_PWM: 60
-
-  CAMERA:
-    TYPE: "usb"
-    DEVICE_ID: 0
-    RESOLUTION: [640, 480]
-    FRAME_RATE: 30
-
   ARM:
-    TYPE: "zp10s"
     PORT: "/dev/ttyS10"
-    BAUDRATE: 115200
 
-# 视觉参数
 VISION:
   MODEL_NAME: "yolov8n-int8-tennis.rknn"
-  CONFIDENCE_THRESHOLD: 0.5
-  NMS_THRESHOLD: 0.45
-  INPUT_SIZE: 640
-  TENNIS_WIDTH_FAR: 20
-  TENNIS_WIDTH_NEAR: 150
-
-# 状态机参数
-STATEMACHINE:
-  TARGET_X: 60.0
-  TARGET_DISTANCE: 0.12
-  THRESHOLD_X: 30.0
-  THRESHOLD_D: 0.02
-  GRIP_THRESHOLD: 155
-  REACH_COUNT_THRESHOLD: 10
-  BUCKET_EDGE_THRESHOLD: 5
-
-# 设备特定参数
-PARAMETERS:
-  FRAME_WIDTH: 640
