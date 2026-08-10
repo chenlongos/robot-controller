@@ -4,7 +4,7 @@
 # 系统配置
 SYSTEM:
   ROBOT_ID: "aka00v4-lubancat3"
-  LOG_LEVEL: "DEBUG"
+  LOG_LEVEL: "INFO"
   HARDWARE_TIMEOUT: 5.0
   MAX_RETRIES: 3
   DISPLAY_ENABLED: false

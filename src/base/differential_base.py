@@ -118,14 +118,15 @@ class DifferentialBase(BaseInterface):
 
         self.left_pid = PIDController(kp, ki, kd, output_limit, max_rate)
         self.right_pid = PIDController(kp, ki, kd, output_limit, max_rate)
-        self.linear_k = 7   # 补偿当前小车的线速度，根据实际情况调整
-        self.rotation_k = 8    # 补偿当前小车的旋转速度，根据实际情况调整
+        self.linear_k = 2   # 补偿当前小车的线速度，根据实际情况调整
+        self.rotation_k = 4    # 补偿当前小车的旋转速度，根据实际情况调整
 
         self.last_time = time.perf_counter()
         self.vx = 0.0  # 前后速度 (m/s)
         self.vy = 0.0  # 左右速度（差分底盘为0）
         self.vw = 0.0  # 旋转速度 (rad/s)
         self.LOOP_TIME = 0.02  # 控制周期20ms（50Hz），兼顾UART通信延迟
+        self.stopped = True  # 停止标志：为True时控制循环不发送电机指令
         self.running = True
         self.thread = threading.Thread(target=self._control_loop)
         self.thread.daemon = True
@@ -144,6 +145,10 @@ class DifferentialBase(BaseInterface):
         4. PID输出乘direction_forward还原为电机坐标系，传给set_speeds()
         """
         while self.running:
+            if self.stopped:
+                time.sleep(self.LOOP_TIME)
+                continue
+
             now = time.perf_counter()
             dt = max(0.001, now - self.last_time)
             self.last_time = now
@@ -200,11 +205,13 @@ class DifferentialBase(BaseInterface):
             y: 左右方向速度 (m/s) - 差分底盘忽略此参数
             w: 旋转角速度 (rad/s)，正值顺时针，负值逆时针
         """
+        self.stopped = False
         self.vx = max(-self.max_linear_speed, min(self.max_linear_speed, x))
         self.vw = max(-self.max_angular_speed, min(self.max_angular_speed, w))
 
     def stop(self) -> None:
         """停止运动"""
+        self.stopped = True
         self.vx = 0.0
         self.vy = 0.0
         self.vw = 0.0
