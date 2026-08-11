@@ -28,10 +28,11 @@ class StateMachine:
         self.threshold_x = self.config.get('threshold_x', 50.0)
         self.threshold_d = self.config.get('threshold_d', 0.05)
         self.grip_threshold = self.config.get('grip_threshold', 90)
+        self.grip_close = self.config.get('grip_close', 0)
         self.reach_count_threshold = self.config.get('reach_count_threshold', 10)
         self.frame_width = self.config.get('frame_width', 640)
         self.bucket_edge_threshold = self.config.get('bucket_edge_threshold', 20)
-    
+
     def get_state(self) -> RobotStatus:
         """获取当前状态"""
         return self.current_state
@@ -44,10 +45,11 @@ class StateMachine:
         self.threshold_x = self.config.get('threshold_x', 50.0)
         self.threshold_d = self.config.get('threshold_d', 0.05)
         self.grip_threshold = self.config.get('grip_threshold', 90)
+        self.grip_close = self.config.get('grip_close', 0)
         self.reach_count_threshold = self.config.get('reach_count_threshold', 10)
         self.frame_width = self.config.get('frame_width', 640)
         self.bucket_edge_threshold = self.config.get('bucket_edge_threshold', 20)
-    
+
     def transition(self, observation: Dict[str, Any]) -> RobotStatus:
         """根据观测进行状态转换"""
         tennis_detected = observation.get("tennis_detected", False)
@@ -82,7 +84,7 @@ class StateMachine:
                     return RobotStatus.SEARCH_TENNIS
         
         elif self.current_state == RobotStatus.PICK:
-            if gripper_angle >= self.grip_threshold:
+            if gripper_angle >= self.grip_threshold + self.grip_close:
                 return RobotStatus.SEARCH_BUCKET
             else:
                 return RobotStatus.SEARCH_TENNIS

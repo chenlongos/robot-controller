@@ -15,6 +15,7 @@ from src.abstract.camera_factory import CameraFactory
 from src.abstract.camera_interface import CameraInterface
 from src.abstract.arm_factory import ArmFactory
 from src.state_machine import StateMachine, RobotStatus
+from src.arm_action_config import angles_to_sequences
 from src.web.webrtc_server import start_webrtc_server, push_frame, is_available as webrtc_available
 import src.base
 import src.camera
@@ -166,8 +167,16 @@ def main():
     all_timings = []    # 每帧的处理时间
     
     robot_name = config.system.robot_id
+    robot_type = robot_name.split("-")[0]
     calibration_params = load_calibration_params(robot_name)
     logging.info(f"加载校准参数: M={calibration_params['M']:.4f}, C={calibration_params['C']:.4f}")
+    
+    # 从 arm_angles 生成 arm_action_sequences，确保机械臂动作序列是最新的
+    logging.info(f"从 arm_angles_{robot_type}.json 生成 arm_action_sequences_{robot_type}.json...")
+    try:
+        angles_to_sequences(robot_type)
+    except FileNotFoundError:
+        logging.warning(f"arm_angles_{robot_type}.json 不存在，跳过动作序列生成")
     
     # 初始化视觉模块
     logging.info("正在初始化视觉模块...")
@@ -188,6 +197,7 @@ def main():
         'threshold_x': config.statemachine.threshold_x,
         'threshold_d': config.statemachine.threshold_d,
         'grip_threshold': config.statemachine.grip_threshold,
+        'grip_close': robot.arm_controller.get_close_gripper_position(),
         'reach_count_threshold': config.statemachine.reach_count_threshold,
         'frame_width': config.device.parameters.frame_width,
         'bucket_edge_threshold': config.statemachine.bucket_edge_threshold

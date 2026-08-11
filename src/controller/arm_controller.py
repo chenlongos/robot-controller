@@ -206,7 +206,7 @@ class ArmController:
     
     def get_gripper_position(self) -> float:
         """获取夹爪位置
-        
+
         Returns:
             夹爪位置，单位为角度
         """
@@ -217,6 +217,21 @@ class ArmController:
         except Exception as e:
             logger.error(f"获取夹爪位置失败: {e}")
             return 0.0
+
+    def get_close_gripper_position(self) -> int:
+        """获取 close_gripper 动作中夹爪的目标位置
+
+        从动作序列配置文件中读取 close_gripper 动作里夹爪的 position 值，
+        供状态机判断抓取成功阈值使用。
+
+        Returns:
+            close_gripper 动作中夹爪的 position 值，若未找到则返回 0
+        """
+        sequences = self._load_action_sequences()
+        for step in sequences.get("close_gripper", []):
+            if step.get("type") == "gripper":
+                return step.get("position", 0)
+        return 0
     
     def stop(self) -> None:
         """停止机械臂"""

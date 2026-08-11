@@ -27,8 +27,8 @@ HARDWARE:
       MAX_RATE: 5
       MIN_PWM: 20
       MAX_PWM: 60
-      LINEAR_K: 4        # 线速度补偿值，根据实际情况调整
-      ROTATION_K: 6      # 旋转速度补偿值，根据实际情况调整
+      LINEAR_K: 2        # 线速度补偿值，根据实际情况调整
+      ROTATION_K: 4      # 旋转速度补偿值，根据实际情况调整
 
   CAMERA:
     TYPE: "usb"
@@ -54,7 +54,7 @@ STATEMACHINE:
   TARGET_DISTANCE: 0.12
   THRESHOLD_X: 10.0
   THRESHOLD_D: 0.01
-  GRIP_THRESHOLD: 155
+  GRIP_THRESHOLD: 10
   REACH_COUNT_THRESHOLD: 10
   BUCKET_EDGE_THRESHOLD: 5
 
