@@ -93,6 +93,8 @@ class DifferentialBase(BaseInterface):
             - kd: PID微分系数（可选）
             - output_limit: PID输出限幅（可选）
             - max_rate: PID输出变化率限幅（可选）
+            - linear_k: 线速度补偿值（可选，默认4）
+            - rotation_k: 旋转速度补偿值（可选，默认6）
         """
         self.driver: MotorDriverProtocol = config.get('driver')
         self.wheel_radius = config.get('wheel_radius', 0.042)
@@ -118,8 +120,8 @@ class DifferentialBase(BaseInterface):
 
         self.left_pid = PIDController(kp, ki, kd, output_limit, max_rate)
         self.right_pid = PIDController(kp, ki, kd, output_limit, max_rate)
-        self.linear_k = 2   # 补偿当前小车的线速度，根据实际情况调整
-        self.rotation_k = 4    # 补偿当前小车的旋转速度，根据实际情况调整
+        self.linear_k = config.get('linear_k', 4)   # 补偿当前小车的线速度，根据实际情况调整
+        self.rotation_k = config.get('rotation_k', 6)    # 补偿当前小车的旋转速度，根据实际情况调整
 
         self.last_time = time.perf_counter()
         self.vx = 0.0  # 前后速度 (m/s)

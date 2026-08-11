@@ -2,12 +2,17 @@
 import sys
 import os
 import ast
+import json
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
 
 from src.config_loader import load_config
 from src.controller.arm_controller import ArmController
 from _robot_select import select_robot
+
+CONFIG_DIR = os.path.join(PROJECT_ROOT, "config")
 
 
 def create_arm(config) -> object:
@@ -35,6 +40,207 @@ def create_arm(config) -> object:
         raise ValueError(f"不支持的机械臂类型: {arm_type}")
     
     return arm
+
+
+# ===== 配置文件转换（arm_angles <-> arm_action_sequences）=====
+# 动作 -> 角度键序列的映射（双向转换依据）
+#   ("joint",   "prepare")  -> joint 步骤，positions 取自 servo{i}_prepare
+#   ("joint",   "lift")     -> joint 步骤，positions 取自 servo{i}_lift
+#   ("gripper", "approach") -> gripper 步骤，position 取自 servo2_approach
+#   ("gripper", "grab")     -> gripper 步骤，position 取自 servo2_grab
+ACTION_ANGLE_MAPPING = {
+    "origin":        [("joint", "lift")],
+    "pick":          [("gripper", "approach"), ("joint", "prepare"),
+                      ("gripper", "grab"), ("joint", "lift")],
+    "put":           [("joint", "lift"), ("gripper", "approach"), ("joint", "lift")],
+    "open_gripper":  [("gripper", "approach")],
+    "close_gripper": [("gripper", "grab")],
+}
+
+# angles 文件键的固定输出顺序（与现有文件保持一致）
+_ANGLES_KEY_ORDER = [
+    "servo0_prepare", "servo1_prepare", "servo2_prepare",
+    "servo2_approach", "servo2_grab",
+    "servo0_lift", "servo1_lift", "servo2_lift",
+]
+
+# gripper 步骤之后插入的延时（秒）；仅在 gripper 步骤非末步时插入
+DELAY_AFTER_GRIPPER = 1.0
+
+
+def _angles_path(robot_type: str) -> Path:
+    return Path(CONFIG_DIR) / f"arm_angles_{robot_type}.json"
+
+
+def _sequences_path(robot_type: str) -> Path:
+    return Path(CONFIG_DIR) / f"arm_action_sequences_{robot_type}.json"
+
+
+def _joint_positions_from_angles(angles: dict, pose: str) -> list:
+    """按 servo0,1,2... 顺序从 angles 中取出 servo{i}_{pose} 角度"""
+    positions = []
+    i = 0
+    while f"servo{i}_{pose}" in angles:
+        positions.append(angles[f"servo{i}_{pose}"])
+        i += 1
+    if not positions:
+        raise KeyError(f"arm_angles 中缺少 servo*_{pose} 角度")
+    return positions
+
+
+def angles_to_sequences(robot_type: str = "aka00v4",
+                        delay_after_gripper: float = DELAY_AFTER_GRIPPER,
+                        overwrite: bool = True) -> dict:
+    """根据 arm_angles_{robot_type}.json 生成 arm_action_sequences_{robot_type}.json
+
+    映射规则见 ACTION_ANGLE_MAPPING；每个 gripper 步骤之后若还有后续步骤，
+    则插入一个 delay 步骤（时长由 delay_after_gripper 指定）。
+
+    Args:
+        robot_type: 机器人类型（如 "aka00v4"）
+        delay_after_gripper: gripper 步骤后插入的延时秒数，<=0 时不插入
+        overwrite: True 则覆盖目标文件；False 时目标已存在则抛 FileExistsError
+
+    Returns:
+        生成的 sequences 字典
+    """
+    angles_path = _angles_path(robot_type)
+    sequences_path = _sequences_path(robot_type)
+
+    if not angles_path.exists():
+        raise FileNotFoundError(f"角度配置文件不存在: {angles_path}")
+    if not overwrite and sequences_path.exists():
+        raise FileExistsError(f"目标文件已存在且 overwrite=False: {sequences_path}")
+
+    with open(angles_path, "r", encoding="utf-8") as f:
+        angles = json.load(f)
+
+    sequences = {}
+    for action, tokens in ACTION_ANGLE_MAPPING.items():
+        raw_steps = []
+        for kind, pose in tokens:
+            if kind == "joint":
+                raw_steps.append({
+                    "type": "joint",
+                    "positions": _joint_positions_from_angles(angles, pose),
+                })
+            else:  # gripper
+                key = f"servo2_{pose}"
+                if key not in angles:
+                    raise KeyError(f"arm_angles 中缺少 {key}")
+                raw_steps.append({"type": "gripper", "position": angles[key]})
+
+        # 在 gripper 步骤后插入 delay（仅当其后还有步骤）
+        steps = []
+        for idx, step in enumerate(raw_steps):
+            steps.append(step)
+            if (step["type"] == "gripper" and delay_after_gripper > 0
+                    and idx != len(raw_steps) - 1):
+                steps.append({"type": "delay", "duration": delay_after_gripper})
+        sequences[action] = steps
+
+    with open(sequences_path, "w", encoding="utf-8") as f:
+        json.dump(sequences, f, indent=2, ensure_ascii=False)
+
+    print(f"[angles→sequences] 已写入 {sequences_path}")
+    return sequences
+
+
+def sequences_to_angles(robot_type: str = "aka00v4",
+                        overwrite: bool = True) -> dict:
+    """从 arm_action_sequences_{robot_type}.json 提取命名角度写回 arm_angles_{robot_type}.json
+
+    按 ACTION_ANGLE_MAPPING 把每个动作的步骤（跳过 delay）对应到角度键。
+    同一角度键被多个步骤引用时，以最先出现的值为准，后续冲突值会打印告警。
+
+    Args:
+        robot_type: 机器人类型
+        overwrite: True 则覆盖目标文件；False 时目标已存在则抛 FileExistsError
+
+    Returns:
+        提取出的 angles 字典（按 _ANGLES_KEY_ORDER 排序）
+    """
+    angles_path = _angles_path(robot_type)
+    sequences_path = _sequences_path(robot_type)
+
+    if not sequences_path.exists():
+        raise FileNotFoundError(f"动作序列文件不存在: {sequences_path}")
+    if not overwrite and angles_path.exists():
+        raise FileExistsError(f"目标文件已存在且 overwrite=False: {angles_path}")
+
+    with open(sequences_path, "r", encoding="utf-8") as f:
+        sequences = json.load(f)
+
+    angles = {}
+
+    def _set_angle(key: str, val, action: str):
+        if key not in angles:
+            angles[key] = val
+        elif angles[key] != val:
+            print(f"[warn] 角度冲突: {key} 已有 {angles[key]}，"
+                  f"动作 '{action}' 提供了不同的值 {val}（保留原值）")
+        # 值相等时保留先出现的值（含类型），不覆盖
+
+    for action, tokens in ACTION_ANGLE_MAPPING.items():
+        seq = sequences.get(action, [])
+        if not seq:
+            print(f"[warn] 动作 '{action}' 在 sequences 中为空，跳过")
+            continue
+        # 跳过 delay 步骤后与 tokens 对齐
+        non_delay = [s for s in seq if s.get("type") != "delay"]
+        if len(non_delay) != len(tokens):
+            print(f"[warn] 动作 '{action}' 步骤数({len(non_delay)})与映射({len(tokens)})不符，跳过")
+            continue
+        for (kind, pose), step in zip(tokens, non_delay):
+            kind_in_file = step.get("type")
+            if kind == "joint":
+                if kind_in_file != "joint":
+                    print(f"[warn] 动作 '{action}' 期望 joint 步骤，实际 {kind_in_file}，跳过该步")
+                    continue
+                for i, val in enumerate(step.get("positions", [])):
+                    _set_angle(f"servo{i}_{pose}", val, action)
+            else:  # gripper
+                if kind_in_file != "gripper":
+                    print(f"[warn] 动作 '{action}' 期望 gripper 步骤，实际 {kind_in_file}，跳过该步")
+                    continue
+                _set_angle(f"servo2_{pose}", step.get("position"), action)
+
+    # 按固定顺序输出
+    ordered = {}
+    for key in _ANGLES_KEY_ORDER:
+        if key in angles:
+            ordered[key] = angles[key]
+    for key in sorted(angles):
+        if key not in ordered:
+            ordered[key] = angles[key]
+
+    with open(angles_path, "w", encoding="utf-8") as f:
+        json.dump(ordered, f, indent=2, ensure_ascii=False)
+
+    print(f"[sequences→angles] 已写入 {angles_path}")
+    return ordered
+
+
+def convert_arm_config_menu(robot_type: str = "aka00v4") -> None:
+    """交互式配置文件转换菜单（不需要连接机械臂）"""
+    while True:
+        print("\n" + "=" * 50)
+        print(f"配置文件转换 (robot_type={robot_type})")
+        print("  1. angles -> sequences")
+        print("  2. sequences -> angles")
+        print("  3. 返回")
+        choice = input("请选择: ").strip()
+        try:
+            if choice == "1":
+                angles_to_sequences(robot_type)
+            elif choice == "2":
+                sequences_to_angles(robot_type)
+            elif choice == "3":
+                break
+            else:
+                print("无效选择")
+        except Exception as e:
+            print(f"转换失败: {e}")
 
 
 def test_arm_controller(robot_name: str):
@@ -184,9 +390,30 @@ def test_arm_controller(robot_name: str):
             arm.disconnect()
 
 
-if __name__ == '__main__':
+def main():
+    """程序入口：顶层菜单，转换功能无需连接机械臂"""
     robot_name = select_robot()
     if robot_name is None:
         sys.exit(0)
+    robot_type = robot_name.split("-")[0]
 
-    test_arm_controller(robot_name)
+    while True:
+        print("\n" + "=" * 50)
+        print(f"机械臂测试主菜单 ({robot_name})")
+        print("  1. 控制器测试 (需连接机械臂)")
+        print("  2. 转换配置文件 (angles <-> sequences)")
+        print("  3. 退出")
+        choice = input("请选择: ").strip()
+        if choice == "1":
+            test_arm_controller(robot_name)
+        elif choice == "2":
+            convert_arm_config_menu(robot_type)
+        elif choice == "3":
+            print("退出")
+            break
+        else:
+            print("无效选择")
+
+
+if __name__ == '__main__':
+    main()

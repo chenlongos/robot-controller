@@ -280,19 +280,22 @@ def main():
 
                     logging.info("开始抓取网球...")
                     result = robot.execute_arm_action("pick")
-                    logging.info("抓取完成")
+                    observation["gripper_angle"] = robot.get_gripper_position()
+                    logging.info(f"抓取完成, 夹爪角度: {observation['gripper_angle']:.2f}")
                     
-                    next_state = RobotStatus.SEARCH_BUCKET
+                    next_state = state_machine.transition(observation)
                     state_machine.set_state(next_state)
-                    logging.info(f"抓取完成，状态转换: {RobotStatus.PICK} -> {next_state}")
-                    
-                    robot.target_type = "bucket"
+                    if next_state == RobotStatus.SEARCH_BUCKET:
+                        logging.info(f"抓取完成，状态转换: {RobotStatus.PICK} -> {next_state}")
+                        robot.target_type = "bucket"
+                    else:
+                        logging.info(f"抓取失败，状态转换: {RobotStatus.PICK} -> {next_state}")
                 
                 elif next_state == RobotStatus.PUT_BALL:
                     robot.controller.stop()
                     logging.info("开始放置网球...")
                     result = robot.execute_arm_action("put")
-                    logging.info("放置完成")
+                    logging.info(f"放置完成")
                     
                     next_state = state_machine.transition(observation)
                     state_machine.set_state(next_state)

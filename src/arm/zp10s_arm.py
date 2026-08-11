@@ -51,7 +51,7 @@ class ZP10SArm(ArmInterface):
     #   仅 warning，避免舵机卡住时阻塞整个交互。
     # - _REACH_POLL_INTERVAL: 轮询读取间隔（秒）。
     _REACH_TOLERANCE: float = 6.0
-    _REACH_TIMEOUT: float = 0.5
+    _REACH_TIMEOUT: float = 2.0
     _REACH_POLL_INTERVAL: float = 0.05
     
     def __init__(self, config: Any):

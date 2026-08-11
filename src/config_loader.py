@@ -103,6 +103,8 @@ class BaseConfig:
     wheel_base: float
     max_linear_speed: float
     max_angular_speed: float
+    linear_k: float = 4.0
+    rotation_k: float = 6.0
     motors: Optional[List[MotorConfig]] = None
     pid: Optional[PIDConfig] = None
     uart: Optional[UARTConfig] = None
@@ -374,6 +376,8 @@ def load_config(robot_name: Optional[str] = None, config_dir: str = "config") ->
                     wheel_base=base_data['WHEEL_BASE'],
                     max_linear_speed=base_data.get('CONTROL', {}).get('MAX_LINEAR_SPEED', 0.4),
                     max_angular_speed=base_data.get('CONTROL', {}).get('MAX_ANGULAR_SPEED', 1.0),
+                    linear_k=driver_data.get('LINEAR_K', 4.0),
+                    rotation_k=driver_data.get('ROTATION_K', 6.0),
                     motors=motors_config,
                     pid=pid_config,
                     uart=uart_config
