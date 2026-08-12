@@ -364,9 +364,9 @@ def main():
                     bucket_left_edge = observation.get("bucket_left_edge", 0)
                     bucket_right_edge = observation.get("bucket_right_edge", 0)
                     
-                    edge_ok = bucket_left_edge != 0 and bucket_right_edge != target_width
+                    edge_ok = (bucket_left_edge * (bucket_right_edge - target_width)) != 0
                     
-                    if True:
+                    if edge_ok:
                         bucket_center_x = (bucket_left_edge + bucket_right_edge) / 2
                         bucket_offset_x = bucket_center_x - config.device.parameters.frame_width / 2
                         track_observation = {
@@ -376,13 +376,15 @@ def main():
                         }
                         command = robot.controller.track(track_observation)
                         logging.debug(f"追踪桶: speed_x={command.get('x', 0):.3f}, speed_w={command.get('w', 0):.3f}")
+                    elif bucket_left_edge == 0 and bucket_right_edge == target_width:
+                        robot.controller.stop()
                     else:
                         logging.debug(f"桶框边缘越界，正在旋转调整: left={bucket_left_edge}, right={bucket_right_edge}")
-                        search_speed = config.control.search_rotation_speed
+                        align_speed = config.control.align_rotation_speed
                         if bucket_left_edge == 0:
-                            robot.controller.move(0.0, 0.0,-search_speed)
+                            robot.controller.move(0.0, 0.0, align_speed)
                         else:
-                            robot.controller.move(0.0, 0.0, +search_speed)
+                            robot.controller.move(0.0, 0.0, -align_speed)
                 else:
                     logging.debug("追踪桶但未检测到，执行搜索旋转")
                     robot.idle()
