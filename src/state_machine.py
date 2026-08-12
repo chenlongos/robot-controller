@@ -5,7 +5,8 @@ from typing import Dict, Any, Optional
 class RobotStatus(Enum):
     """机器人状态枚举"""
     SEARCH_TENNIS = "search_tennis"    # 搜索网球
-    TRACK_TENNIS = "track_tennis"      # 跟踪网球
+    TRACK_TENNIS = "track_tennis"      # 跟踪网球（差速运动，目标至视野垂直中线且距离达标）
+    ALIGN_TENNIS = "align_tennis"      # 对齐网球（低速旋转，目标左x值达标）
     PICK = "pick"                      # 抓取网球
     SEARCH_BUCKET = "search_bucket"    # 寻找桶
     TRACK_BUCKET = "track_bucket"      # 跟踪桶
@@ -56,6 +57,7 @@ class StateMachine:
         bucket_detected = observation.get("bucket_detected", False)
         tennis_distance = observation.get("tennis_distance", float('inf'))
         tennis_offset_x = observation.get("tennis_offset_x", 0.0)
+        tennis_left_edge = observation.get("tennis_left_edge", 0.0)
         bucket_left_edge = observation.get("bucket_left_edge", float('inf'))
         bucket_right_edge = observation.get("bucket_right_edge", -float('inf'))
         gripper_angle = observation.get("gripper_angle", 0)
@@ -66,10 +68,31 @@ class StateMachine:
         
         elif self.current_state == RobotStatus.TRACK_TENNIS:
             if tennis_detected:
-                x_ok = abs(tennis_offset_x - self.target_x) <= self.threshold_x
+                # 目标处于视野垂直中线（容差 2*THRESHOLD_X）且距离达标
+                centerline_ok = abs(tennis_offset_x) <= 2 * self.threshold_x
                 d_ok = abs(tennis_distance - self.target_distance) <= self.threshold_d
-                
-                if x_ok and d_ok:
+
+                if centerline_ok and d_ok:
+                    self.pick_ready_count += 1
+                    if self.pick_ready_count >= self.reach_count_threshold:
+                        self.pick_ready_count = 0
+                        return RobotStatus.ALIGN_TENNIS
+                else:
+                    self.pick_ready_count = 0
+            else:
+                self.pick_ready_count = 0
+                self.lost_count += 1
+                if self.lost_count >= self.reach_count_threshold:
+                    self.lost_count = 0
+                    return RobotStatus.SEARCH_TENNIS
+
+        elif self.current_state == RobotStatus.ALIGN_TENNIS:
+            if tennis_detected:
+                # 目标左x值满足 [TARGET_X, TARGET_X + THRESHOLD_X]
+                left_ok = (tennis_left_edge >= self.target_x
+                           and tennis_left_edge <= self.target_x + self.threshold_x)
+
+                if left_ok:
                     self.pick_ready_count += 1
                     if self.pick_ready_count >= self.reach_count_threshold:
                         self.pick_ready_count = 0

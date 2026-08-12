@@ -58,6 +58,7 @@ class ControlConfig:
     max_linear_speed: float
     max_angular_speed: float
     search_rotation_speed: float
+    align_rotation_speed: float
     target_x: float
     target_distance: float
 
@@ -353,6 +354,7 @@ def load_config(robot_name: Optional[str] = None, config_dir: str = "config") ->
             max_linear_speed=control_data.get('MAX_LINEAR_SPEED', 0.4),
             max_angular_speed=control_data.get('MAX_ANGULAR_SPEED', 1.0),
             search_rotation_speed=control_data.get('SEARCH_ROTATION_SPEED', 0.3),
+            align_rotation_speed=control_data.get('ALIGN_ROTATION_SPEED', 0.3),
             target_x=sm_data.get('TARGET_X', 0.0),
             target_distance=sm_data.get('TARGET_DISTANCE', 0.2)
         ),

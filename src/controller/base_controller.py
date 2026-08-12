@@ -59,7 +59,9 @@ class BaseController:
         error_x = observation.get("target_offset_x", 0.0)
 
         max_speed = self._config_dict.get('max_linear_speed', 0.4)
-        target_x = self._config_dict.get('target_x', 0.0)
+        # 角度控制的目标偏移量：可在 observation 中通过 target_offset_setpoint 覆盖
+        # （例如 TRACK_TENNIS 传 0.0 以将目标对齐视野垂直中线）
+        target_x = observation.get("target_offset_setpoint", self._config_dict.get('target_x', 0.0))
         target_distance = self._config_dict.get('target_distance', 0.2)
 
         kp_dist = self._config_dict.get('kp_dist', 2.0)
