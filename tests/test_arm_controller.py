@@ -8,7 +8,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from src.config_loader import load_config
 from src.controller.arm_controller import ArmController
-from src.arm_action_config import angles_to_sequences, sequences_to_angles
+from src.utils.arm_action_config import angles_to_sequences, sequences_to_angles
 from _robot_select import select_robot
 
 

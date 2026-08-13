@@ -32,12 +32,13 @@ class StateMachine:
         self.grip_close = self.config.get('grip_close', 0)
         self.reach_count_threshold = self.config.get('reach_count_threshold', 10)
         self.frame_width = self.config.get('frame_width', 640)
+        self.frame_height = self.config.get('frame_height', 480)
         self.bucket_edge_threshold = self.config.get('bucket_edge_threshold', 20)
 
     def get_state(self) -> RobotStatus:
         """获取当前状态"""
         return self.current_state
-    
+
     def set_config(self, config: Dict) -> None:
         """设置配置"""
         self.config = config
@@ -49,6 +50,7 @@ class StateMachine:
         self.grip_close = self.config.get('grip_close', 0)
         self.reach_count_threshold = self.config.get('reach_count_threshold', 10)
         self.frame_width = self.config.get('frame_width', 640)
+        self.frame_height = self.config.get('frame_height', 480)
         self.bucket_edge_threshold = self.config.get('bucket_edge_threshold', 20)
 
     def transition(self, observation: Dict[str, Any]) -> RobotStatus:
@@ -60,6 +62,7 @@ class StateMachine:
         tennis_left_edge = observation.get("tennis_left_edge", 0.0)
         bucket_left_edge = observation.get("bucket_left_edge", float('inf'))
         bucket_right_edge = observation.get("bucket_right_edge", -float('inf'))
+        bucket_bottom_edge = observation.get("bucket_bottom_edge", -float('inf'))
         gripper_angle = observation.get("gripper_angle", 0)
         
         if self.current_state == RobotStatus.SEARCH_TENNIS:
@@ -119,9 +122,11 @@ class StateMachine:
         elif self.current_state == RobotStatus.TRACK_BUCKET:
             if bucket_detected:
                 left_ok = bucket_left_edge >= 0 and bucket_left_edge <= self.bucket_edge_threshold
-                right_ok = bucket_right_edge <= self.frame_width and bucket_right_edge >= self.frame_width - self.bucket_edge_threshold 
-                
-                if left_ok and right_ok:
+                right_ok = bucket_right_edge <= self.frame_width and bucket_right_edge >= self.frame_width - self.bucket_edge_threshold
+                bottom_ok = (bucket_bottom_edge >= self.frame_height - self.bucket_edge_threshold
+                             and bucket_bottom_edge <= self.frame_height)
+
+                if left_ok and right_ok and bottom_ok:
                     return RobotStatus.PUT_BALL
             else:
                 self.lost_count += 1

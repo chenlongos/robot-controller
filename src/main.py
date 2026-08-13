@@ -15,7 +15,8 @@ from src.abstract.camera_factory import CameraFactory
 from src.abstract.camera_interface import CameraInterface
 from src.abstract.arm_factory import ArmFactory
 from src.state_machine import StateMachine, RobotStatus
-from src.arm_action_config import angles_to_sequences
+from src.utils.arm_action_config import angles_to_sequences
+from src.utils.image_saver import save_put_picture
 from src.web.webrtc_server import start_webrtc_server, push_frame, is_available as webrtc_available
 import src.base
 import src.camera
@@ -162,6 +163,7 @@ class Robot:
         self.controller.stop()
         logging.info(f"移动完成，目标距离: {distance:.2f}m，实际距离: {traveled_distance:.2f}m")
 
+
 def main():
     """主控制循环 - 捡球循环：找球->抓球->找桶->放球->找球"""
     all_timings = []    # 每帧的处理时间
@@ -199,7 +201,8 @@ def main():
         'grip_threshold': config.statemachine.grip_threshold,
         'grip_close': robot.arm_controller.get_close_gripper_position(),
         'reach_count_threshold': config.statemachine.reach_count_threshold,
-        'frame_width': config.device.parameters.frame_width,
+        'frame_width': config.device.hardware.camera.resolution[0],
+        'frame_height': config.device.hardware.camera.resolution[1],
         'bucket_edge_threshold': config.statemachine.bucket_edge_threshold
     }
     state_machine = StateMachine(sm_config)
@@ -228,12 +231,14 @@ def main():
             robot.frame_height = height
             
             # 调整帧大小
-            target_width = config.device.parameters.frame_width
+            target_width = config.device.hardware.camera.resolution[0]
             if width != target_width:
                 logging.warning(f"当前帧宽度 {width} 不等于 {target_width}，正在调整大小...")
-                frame = cv2.resize(frame, (target_width, int(target_width * height / width)), 
+                frame = cv2.resize(frame, (target_width, int(target_width * height / width)),
                                 interpolation=cv2.INTER_LINEAR)
                 robot.frame_height = frame.shape[0]
+            # 同步状态机的帧高（用于桶底边沿判定）
+            state_machine.frame_height = robot.frame_height
 
             tennis_result = []
             bucket_result = []
@@ -275,6 +280,8 @@ def main():
                     box = sorted(bucket_result, key=lambda x: x['w'], reverse=True)[0]
                     observation["bucket_left_edge"] = box["x"]
                     observation["bucket_right_edge"] = box["x"] + box["w"]
+                    observation["bucket_top_edge"] = box["y"]
+                    observation["bucket_bottom_edge"] = box["y"] + box["h"]
 
             # 状态机更新
             next_state = state_machine.transition(observation)
@@ -363,12 +370,37 @@ def main():
                 if observation["bucket_detected"]:
                     bucket_left_edge = observation.get("bucket_left_edge", 0)
                     bucket_right_edge = observation.get("bucket_right_edge", 0)
+                    bucket_top_edge = observation.get("bucket_top_edge", 0)
+                    bucket_bottom_edge = observation.get("bucket_bottom_edge", 0)
                     
-                    edge_ok = (bucket_left_edge * (bucket_right_edge - target_width)) != 0
-                    
-                    if edge_ok:
+                    left_cut = bucket_left_edge <= config.statemachine.bucket_edge_threshold
+                    right_cut = bucket_right_edge >= target_width - config.statemachine.bucket_edge_threshold
+                    top_cut = bucket_top_edge == config.statemachine.bucket_edge_threshold
+                    bottom_cut = bucket_bottom_edge >= robot.frame_height - config.statemachine.bucket_edge_threshold
+                    single_side_cut = left_cut ^ right_cut
+                    full_width_cut = left_cut and right_cut
+
+                    if full_width_cut:
+                        if bottom_cut:
+                            # 满足条件，停止移动
+                            robot.controller.stop()
+                            logging.debug("桶占满整个帧宽，底边满足条件，停止移动")
+                        else:
+                            # 底边未满足条件，慢速直行继续前进
+                            robot.controller.move(0.2, 0.0, 0.0)
+                            logging.debug("桶占满整个帧宽，底边未满足条件，慢速直行继续前进")
+                    elif single_side_cut and top_cut:
+                        # 近距离单侧裁切，旋转调整
+                        logging.debug(f"桶框边缘越界，正在旋转调整: left={bucket_left_edge}, right={bucket_right_edge}")
+                        align_speed = config.control.align_rotation_speed
+                        if left_cut:
+                            robot.controller.move(0.0, 0.0, align_speed)
+                        else:
+                            robot.controller.move(0.0, 0.0, -align_speed)
+                    else:
+                        # 默认追踪桶
                         bucket_center_x = (bucket_left_edge + bucket_right_edge) / 2
-                        bucket_offset_x = bucket_center_x - config.device.parameters.frame_width / 2
+                        bucket_offset_x = bucket_center_x - target_width / 2
                         track_observation = {
                             "target_offset_x": bucket_offset_x,
                             "target_distance": observation.get("bucket_distance", 1.0),
@@ -376,15 +408,6 @@ def main():
                         }
                         command = robot.controller.track(track_observation)
                         logging.debug(f"追踪桶: speed_x={command.get('x', 0):.3f}, speed_w={command.get('w', 0):.3f}")
-                    elif bucket_left_edge == 0 and bucket_right_edge == target_width:
-                        robot.controller.stop()
-                    else:
-                        logging.debug(f"桶框边缘越界，正在旋转调整: left={bucket_left_edge}, right={bucket_right_edge}")
-                        align_speed = config.control.align_rotation_speed
-                        if bucket_left_edge == 0:
-                            robot.controller.move(0.0, 0.0, align_speed)
-                        else:
-                            robot.controller.move(0.0, 0.0, -align_speed)
                 else:
                     logging.debug("追踪桶但未检测到，执行搜索旋转")
                     robot.idle()

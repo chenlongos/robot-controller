@@ -36,7 +36,7 @@ def test_vision_inference_with_camera(config):
         logger.info(f"  硬件模式: {config.device.hardware.mode}")
         logger.info(f"  模型名称: {config.vision.model_name}")
         logger.info(f"  置信度阈值: {config.vision.confidence_threshold}")
-        logger.info(f"  输入尺寸: {config.vision.input_size}")
+        logger.info(f"  输入尺寸: {config.device.hardware.camera.resolution[0]}")
 
         vision = VisionModule(config)
 

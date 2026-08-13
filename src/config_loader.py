@@ -31,9 +31,6 @@ class VisionConfig:
     model_name: str
     confidence_threshold: float
     nms_threshold: float
-    input_size: int
-    tennis_width_far: int
-    tennis_width_near: int
 
 
 @dataclass
@@ -141,15 +138,9 @@ class HardwareConfig:
     arm: Optional[ArmConfig] = None
 
 @dataclass
-class DeviceParameters:
-    """设备特定参数"""
-    frame_width: int
-
-@dataclass
 class DeviceConfig:
     """设备配置"""
     hardware: HardwareConfig
-    parameters: DeviceParameters
 
 @dataclass
 class RobotConfig:
@@ -340,10 +331,7 @@ def load_config(robot_name: Optional[str] = None, config_dir: str = "config") ->
         vision=VisionConfig(
             model_name=robot['VISION']['MODEL_NAME'],
             confidence_threshold=robot['VISION']['CONFIDENCE_THRESHOLD'],
-            nms_threshold=robot['VISION']['NMS_THRESHOLD'],
-            input_size=robot['VISION']['INPUT_SIZE'],
-            tennis_width_far=robot['VISION']['TENNIS_WIDTH_FAR'],
-            tennis_width_near=robot['VISION']['TENNIS_WIDTH_NEAR']
+            nms_threshold=robot['VISION']['NMS_THRESHOLD']
         ),
         control=ControlConfig(
             kp_dist=control_data.get('KP_DIST', 0.8),
@@ -391,9 +379,6 @@ def load_config(robot_name: Optional[str] = None, config_dir: str = "config") ->
                     frame_rate=robot['HARDWARE']['CAMERA']['FRAME_RATE']
                 ),
                 arm=arm_config
-            ),
-            parameters=DeviceParameters(
-                frame_width=robot['PARAMETERS']['FRAME_WIDTH']
             )
         )
     )

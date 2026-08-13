@@ -22,7 +22,7 @@ class VisionModule:
         self.hardware_mode = config.device.hardware.mode
         self.model_name = config.vision.model_name
         self.model_format = config.device.hardware.model_format
-        self.input_size = config.vision.input_size
+        self.input_size = config.device.hardware.camera.resolution[0]
         self.confidence_threshold = config.vision.confidence_threshold
         self.nms_threshold = config.vision.nms_threshold
         

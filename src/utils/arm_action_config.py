@@ -41,8 +41,8 @@ DELAY_AFTER_GRIPPER = 1.0
 
 
 def _project_root() -> Path:
-    """返回项目根目录（src/ 的上一级）"""
-    return Path(__file__).resolve().parent.parent
+    """返回项目根目录（src/utils/ 的上两级）"""
+    return Path(__file__).resolve().parent.parent.parent
 
 
 def _angles_path(robot_type: str) -> Path:
