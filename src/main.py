@@ -5,6 +5,7 @@ import logging
 import time
 import cv2
 import yaml
+import signal
 from dataclasses import dataclass, field
 from src.config_loader import load_config
 from src.controller.vision_module import VisionModule
@@ -35,6 +36,13 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
+def handle_sigterm(signal, frame):
+    logging.info("收到 SIGTERM 信号，模拟 KeyboardInterrupt")
+    raise KeyboardInterrupt
+
+signal.signal(signal.SIGTERM, handle_sigterm)
+    
 
 def load_calibration_params(robot_name: str, config_dir: str = 'config') -> dict:
     robot_type = robot_name.split("-")[0]
@@ -274,7 +282,7 @@ def main():
             
             # 桶检测
             elif current_state in [RobotStatus.SEARCH_BUCKET, RobotStatus.TRACK_BUCKET]:
-                bucket_result = vision_module.get_bucket_local(frame, color="red")
+                bucket_result = vision_module.get_bucket_local(frame, color="blue")
                 if bucket_result:
                     observation["bucket_detected"] = True
                     box = sorted(bucket_result, key=lambda x: x['w'], reverse=True)[0]
@@ -319,6 +327,9 @@ def main():
                     logging.info(f"放置完成，状态转换: {RobotStatus.PUT_BALL} -> {next_state}")
                     
                     if next_state in [RobotStatus.SEARCH_TENNIS, RobotStatus.TRACK_TENNIS, RobotStatus.ALIGN_TENNIS]:
+                        robot.controller.move(-0.2, 0, 0)
+                        time.sleep(0.5)
+                        robot.controller.stop()
                         robot.target_type = "tennis"
 
                 elif next_state in [RobotStatus.SEARCH_TENNIS, RobotStatus.TRACK_TENNIS, RobotStatus.ALIGN_TENNIS]:
