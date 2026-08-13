@@ -57,15 +57,21 @@ class USBCamera(CameraInterface):
         if self.cap is None or not self.cap.isOpened():
             self.logger.warning("摄像头未打开")
             return None
-        
+
         for _ in range(flush_frames):
-            self.cap.grab()
-        
-        ret, frame = self.cap.retrieve()
-        if not ret:
+            if not self.cap.grab():
+                self.logger.warning("grab 失败，可能摄像头掉线或缓冲异常")
+                return None
+
+        try:
+            ret, frame = self.cap.retrieve()
+        except cv2.error as e:
+            self.logger.warning(f"retrieve 异常: {e}")
+            return None
+        if not ret or frame is None:
             self.logger.warning("无法读取帧")
             return None
-        
+
         return frame
     
     def get_intrinsics(self) -> Dict[str, float]:
