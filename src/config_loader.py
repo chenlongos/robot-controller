@@ -229,10 +229,14 @@ def load_config(robot_name: Optional[str] = None, config_dir: str = "config") ->
     
     config_dir_robots = os.path.join(full_config_dir, "robots")
     common_path = os.path.join(config_dir_robots, f"{robot_type}-common.yaml")
-    board_path = os.path.join(config_dir_robots, f"{robot_type}-{board_name}.yaml")
-    
     if not os.path.exists(common_path):
-        raise FileNotFoundError(f"共有配置文件不存在: {common_path}")
+        common_template = os.path.join(config_dir_robots, f"{robot_type}-common.template.yaml")
+        if os.path.exists(common_template):
+            common_path = common_template
+        else:
+            raise FileNotFoundError(f"共有配置文件不存在: {common_path}")
+    board_path = os.path.join(config_dir_robots, f"{robot_type}-{board_name}.yaml")
+
     if not os.path.exists(board_path):
         raise FileNotFoundError(f"开发板配置文件不存在: {board_path}")
     

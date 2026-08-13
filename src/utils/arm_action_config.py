@@ -46,7 +46,15 @@ def _project_root() -> Path:
 
 
 def _angles_path(robot_type: str) -> Path:
-    return _project_root() / "config" / f"arm_angles_{robot_type}.json"
+    """返回 arm_angles_{robot_type}.json 的路径。
+
+    若主文件不存在则回退到 arm_angles_{robot_type}.template.json。
+    """
+    primary = _project_root() / "config" / f"arm_angles_{robot_type}.json"
+    if primary.exists():
+        return primary
+    template = _project_root() / "config" / f"arm_angles_{robot_type}.template.json"
+    return template
 
 
 def _sequences_path(robot_type: str) -> Path:

@@ -205,3 +205,8 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# local config file
+config/arm_action_sequences_aka00v4.json
+config/arm_angles_aka00v4.json
+config/robots/aka00v4-common.yaml
