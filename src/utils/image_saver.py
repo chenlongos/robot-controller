@@ -4,10 +4,12 @@
 import os
 import time
 import logging
+import threading
 import cv2
 
 from src.config_loader import load_config
 from src.camera.usb_camera import USBCamera
+from src.web.webrtc_server import start_webrtc_server, push_frame, is_available as webrtc_available
 
 # 项目根目录: src/utils/ -> src/ -> 项目根
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -59,9 +61,10 @@ def save_picture(frame_img, vision_module=None, tennis_dets=None, bucket_dets=No
 
 
 def main():
-    """交互式保存图片循环
+    """交互式保存图片循环（带 WebRTC 连续推流）
 
-    从 USB 摄像头实时取帧，循环询问用户是否保存图片：
+    在后台线程中持续从 USB 摄像头取帧并推流到 WebRTC，保证推流不被打断；
+    主线程处理用户交互，保存图片时复用后台线程采集到的最新帧。
     - 选择保存时可输入一个字符串追加到文件名
     - 选择不保存则退出程序
     """
@@ -76,10 +79,33 @@ def main():
         print("摄像头未打开，退出程序")
         return
 
+    start_webrtc_server(port=8080)
+
     print("=" * 50)
-    print("图片保存工具")
+    print("图片保存工具（WebRTC 推流中）")
     print("=" * 50)
+    print("推流地址: http://<本机IP>:8080")
     print("输入 'y' 保存图片，输入其他任意键退出")
+
+    # 后台推流线程与主线程共享的最新帧
+    latest_frame = {'frame': None}
+    frame_lock = threading.Lock()
+    streaming_flag = {'running': True}
+
+    def streaming_loop():
+        """连续推流：不断取帧并推送到 WebRTC，同时更新共享的最新帧"""
+        while streaming_flag['running']:
+            frame = camera.capture()
+            if frame is None:
+                time.sleep(0.01)
+                continue
+            with frame_lock:
+                latest_frame['frame'] = frame
+            if webrtc_available():
+                push_frame(frame)
+
+    stream_thread = threading.Thread(target=streaming_loop, daemon=True)
+    stream_thread.start()
 
     try:
         while True:
@@ -88,15 +114,17 @@ def main():
                 print("退出程序")
                 break
 
-            frame = camera.capture()
+            with frame_lock:
+                frame = latest_frame['frame']
             if frame is None:
-                print("采集失败，跳过本次保存")
+                print("尚未采集到帧，跳过本次保存")
                 continue
 
             label = input("请输入要加入文件名的字符串（可直接回车跳过）: ").strip()
             fpath = save_picture(frame, label=label)
             print(f"已保存: {fpath}")
     finally:
+        streaming_flag['running'] = False
         camera.release()
 
 

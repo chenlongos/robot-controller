@@ -281,7 +281,7 @@ def main():
             
             # 桶检测
             elif current_state in [RobotStatus.SEARCH_BUCKET, RobotStatus.TRACK_BUCKET]:
-                bucket_result = vision_module.get_bucket_local(frame, color="blue")
+                bucket_result = vision_module.get_bucket_local(frame)
                 if bucket_result:
                     observation["bucket_detected"] = True
                     box = sorted(bucket_result, key=lambda x: x['w'], reverse=True)[0]

@@ -31,6 +31,7 @@ class VisionConfig:
     model_name: str
     confidence_threshold: float
     nms_threshold: float
+    bucket_color: str
 
 
 @dataclass
@@ -331,7 +332,8 @@ def load_config(robot_name: Optional[str] = None, config_dir: str = "config") ->
         vision=VisionConfig(
             model_name=robot['VISION']['MODEL_NAME'],
             confidence_threshold=robot['VISION']['CONFIDENCE_THRESHOLD'],
-            nms_threshold=robot['VISION']['NMS_THRESHOLD']
+            nms_threshold=robot['VISION']['NMS_THRESHOLD'],
+            bucket_color=robot['VISION']['BUCKET_COLOR']
         ),
         control=ControlConfig(
             kp_dist=control_data.get('KP_DIST', 0.8),

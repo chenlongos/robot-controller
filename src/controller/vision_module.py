@@ -19,6 +19,7 @@ class VisionModule:
         self.input_name = None
         
         # 配置参数
+        self.bucket_color = config.vision.bucket_color
         self.hardware_mode = config.device.hardware.mode
         self.model_name = config.vision.model_name
         self.model_format = config.device.hardware.model_format
@@ -360,8 +361,10 @@ class VisionModule:
         
         return boxes
 
-    def get_bucket_local(self, frame, color="red") -> List[Dict]:
+    def get_bucket_local(self, frame, color=None) -> List[Dict]:
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        if color is None:
+            color = self.bucket_color
         
         if color == "red":
             lower_red1 = np.array([0, 80, 50])
