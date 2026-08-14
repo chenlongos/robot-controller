@@ -17,7 +17,6 @@ from src.abstract.camera_interface import CameraInterface
 from src.abstract.arm_factory import ArmFactory
 from src.state_machine import StateMachine, RobotStatus
 from src.utils.arm_action_config import angles_to_sequences
-from src.utils.image_saver import save_put_picture
 from src.web.webrtc_server import start_webrtc_server, push_frame, is_available as webrtc_available
 import src.base
 import src.camera
