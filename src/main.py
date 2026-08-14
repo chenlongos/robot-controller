@@ -327,7 +327,7 @@ def main():
                     
                     if next_state in [RobotStatus.SEARCH_TENNIS, RobotStatus.TRACK_TENNIS, RobotStatus.ALIGN_TENNIS]:
                         robot.controller.move(-0.2, 0, 0)
-                        time.sleep(0.5)
+                        time.sleep(0.8)
                         robot.controller.stop()
                         robot.target_type = "tennis"
 
@@ -397,7 +397,7 @@ def main():
                             logging.debug("桶占满整个帧宽，底边满足条件，停止移动")
                         else:
                             # 底边未满足条件，慢速直行继续前进
-                            robot.controller.move(0.2, 0.0, 0.0)
+                            robot.controller.move(0.1, 0.0, 0.0)
                             logging.debug("桶占满整个帧宽，底边未满足条件，慢速直行继续前进")
                     elif single_side_cut and top_cut:
                         # 近距离单侧裁切，旋转调整

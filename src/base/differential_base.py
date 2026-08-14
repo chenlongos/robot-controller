@@ -148,6 +148,8 @@ class DifferentialBase(BaseInterface):
         """
         while self.running:
             if self.stopped:
+                # 持续重发停止指令，防止上一条运动指令因UART丢包导致底盘漂移
+                self.driver.stop()
                 time.sleep(self.LOOP_TIME)
                 continue
 

@@ -50,7 +50,7 @@ class ZP10SArm(ArmInterface):
     # - _REACH_TIMEOUT: 到位等待超时（秒）。超时后不抛异常（指令已发，到位是尽力而为），
     #   仅 warning，避免舵机卡住时阻塞整个交互。
     # - _REACH_POLL_INTERVAL: 轮询读取间隔（秒）。
-    _REACH_TOLERANCE: float = 6.0
+    _REACH_TOLERANCE: float = 10.0
     _REACH_TIMEOUT: float = 2.0
     _REACH_POLL_INTERVAL: float = 0.05
     

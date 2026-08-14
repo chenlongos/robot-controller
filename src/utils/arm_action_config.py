@@ -37,7 +37,7 @@ _ANGLES_KEY_ORDER = [
 ]
 
 # gripper 步骤之后插入的延时（秒）；仅在 gripper 步骤非末步时插入
-DELAY_AFTER_GRIPPER = 1.0
+DELAY_AFTER_GRIPPER = 0.5
 
 
 def _project_root() -> Path:
