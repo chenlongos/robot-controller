@@ -19,7 +19,7 @@ def list_robots():
     robots = []
     if os.path.isdir(config_dir):
         for f in sorted(os.listdir(config_dir)):
-            if f.endswith('.yaml') and not f.endswith('-common.yaml'):
+            if f.endswith('.yaml') and not f.endswith('-common.yaml') and not f.endswith('template.yaml'):
                 robots.append(f[:-5])
     return robots
 

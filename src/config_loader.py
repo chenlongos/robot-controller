@@ -59,6 +59,10 @@ class ControlConfig:
     align_rotation_speed: float
     target_x: float
     target_distance: float
+    lpf_alpha: float = 0.3
+    angular_limit_near: float = 0.3
+    angular_limit_far: float = 0.15
+    linear_decay_factor: float = 0.7
 
 @dataclass
 class MotorConfig:
@@ -350,7 +354,11 @@ def load_config(robot_name: Optional[str] = None, config_dir: str = "config") ->
             search_rotation_speed=control_data.get('SEARCH_ROTATION_SPEED', 0.3),
             align_rotation_speed=control_data.get('ALIGN_ROTATION_SPEED', 0.3),
             target_x=sm_data.get('TARGET_X', 0.0),
-            target_distance=sm_data.get('TARGET_DISTANCE', 0.2)
+            target_distance=sm_data.get('TARGET_DISTANCE', 0.2),
+            lpf_alpha=control_data.get('LPF_ALPHA', 0.3),
+            angular_limit_near=control_data.get('ANGULAR_LIMIT_NEAR', 0.3),
+            angular_limit_far=control_data.get('ANGULAR_LIMIT_FAR', 0.15),
+            linear_decay_factor=control_data.get('LINEAR_DECAY_FACTOR', 0.7)
         ),
         statemachine=StateMachineConfig(
             target_x=sm_data.get('TARGET_X', 0.0),

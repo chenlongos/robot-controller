@@ -24,6 +24,10 @@ class BaseController:
                 'max_linear_speed': config.max_linear_speed,
                 'target_x': config.target_x,
                 'target_distance': config.target_distance,
+                'lpf_alpha': config.lpf_alpha,
+                'angular_limit_near': config.angular_limit_near,
+                'angular_limit_far': config.angular_limit_far,
+                'linear_decay_factor': config.linear_decay_factor,
             }
         elif isinstance(config, dict):
             self._config_dict = config.copy()
@@ -36,6 +40,8 @@ class BaseController:
         
         self._prev_distance = None
         self._integral = 0.0
+        self._filtered_distance = 0.0
+        self._filtered_error_x = 0.0
     
     def search(self) -> Dict[str, float]:
         """搜索模式 - 360度旋转扫描，返回角速度指令"""
@@ -58,6 +64,14 @@ class BaseController:
         distance = observation.get("target_distance", 1.0)
         error_x = observation.get("target_offset_x", 0.0)
 
+        # 一阶低通滤波观测值（闭环外滤波，不引入控制延迟）
+        lpf_alpha = self._config_dict.get('lpf_alpha', 0.3)
+        self._filtered_distance = lpf_alpha * distance + (1 - lpf_alpha) * self._filtered_distance
+        self._filtered_error_x = lpf_alpha * error_x + (1 - lpf_alpha) * self._filtered_error_x
+
+        distance = self._filtered_distance
+        error_x = self._filtered_error_x
+
         max_speed = self._config_dict.get('max_linear_speed', 0.4)
         # 角度控制的目标偏移量：可在 observation 中通过 target_offset_setpoint 覆盖
         # （例如 TRACK_TENNIS 传 0.0 以将目标对齐视野垂直中线）
@@ -71,12 +85,14 @@ class BaseController:
 
         error_dist = distance - target_distance
 
-        if abs(error_dist) > 0.3:
-            angular_speed = kp_angle * (target_x - error_x)
-            angular_speed = max(-1.0, min(1.0, angular_speed))
-        else:
-            angular_speed = kp_angle * (target_x - error_x)
-            angular_speed = max(-0.3, min(0.3, angular_speed))
+        # 角速度上限：距离越远上限越小，近距离允许较大角速度精确对齐
+        angular_limit_near = self._config_dict.get('angular_limit_near', 0.3)
+        angular_limit_far = self._config_dict.get('angular_limit_far', 0.15)
+        t = min(abs(error_dist) / 1.0, 1.0)
+        angular_limit = angular_limit_near + (angular_limit_far - angular_limit_near) * t
+
+        angular_speed = kp_angle * (target_x - error_x)
+        angular_speed = max(-angular_limit, min(angular_limit, angular_speed))
 
         max_integral = max_speed / ki_dist if ki_dist > 0 else float('inf')
 
@@ -99,6 +115,11 @@ class BaseController:
         if abs(linear_speed) < 0.001:
             linear_speed = 0.0
 
+        # 线速度自适应衰减：角速度占比越高线速度越小，但保留最低比例保证弧线前进
+        decay_factor = self._config_dict.get('linear_decay_factor', 0.0)
+        angular_ratio = min(abs(angular_speed) / angular_limit, 1.0) if angular_limit > 0 else 0.0
+        linear_speed *= (1.0 - decay_factor * angular_ratio)
+
         self.base.move(linear_speed, 0.0, angular_speed)
         return {"x": linear_speed, "w": angular_speed}
     
@@ -106,6 +127,8 @@ class BaseController:
         """重置PID状态"""
         self._prev_distance = None
         self._integral = 0.0
+        self._filtered_distance = 0.0
+        self._filtered_error_x = 0.0
     
     def stop(self) -> None:
         """停止底盘"""
