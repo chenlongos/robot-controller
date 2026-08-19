@@ -10,10 +10,15 @@ arm_action_sequences 文件以动作步骤（joint/gripper/delay）存储。
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Dict, List
 
 logger = logging.getLogger(__name__)
+
+# angles 配置文件位置的环境变量名，供外部仓库指定自己的 arm_angles 文件，
+# 设置后优先于本仓库 config/ 下的同名文件
+ANGLES_PATH_ENV = "AKA00_ARM_ANGLES"
 
 # 动作 -> 角度键序列的映射（双向转换依据）
 #   ("joint",   "prepare")  -> joint 步骤，positions 取自 servo{i}_prepare
@@ -48,8 +53,20 @@ def _project_root() -> Path:
 def _angles_path(robot_type: str) -> Path:
     """返回 arm_angles_{robot_type}.json 的路径。
 
-    若主文件不存在则回退到 arm_angles_{robot_type}.template.json。
+    查找优先级：
+    1. 环境变量 ANGLES_PATH_ENV（AKA00_ARM_ANGLES）指定的文件位置
+    2. <项目根>/config/arm_angles_{robot_type}.json
+    3. <项目根>/config/arm_angles_{robot_type}.template.json
     """
+    env_value = os.environ.get(ANGLES_PATH_ENV, "").strip()
+    if env_value:
+        path = Path(env_value).expanduser()
+        if not path.exists():
+            logger.warning(f"环境变量 {ANGLES_PATH_ENV} 指定的文件不存在: {path}")
+        else:
+            logger.debug(f"arm_angles 使用环境变量 {ANGLES_PATH_ENV} 指定的路径: {path}")
+        return path
+
     primary = _project_root() / "config" / f"arm_angles_{robot_type}.json"
     if primary.exists():
         return primary

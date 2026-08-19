@@ -6,6 +6,11 @@ import logging
 import numpy as np
 from typing import List, Dict, Optional
 
+# rk3576 模型文件位置的环境变量名。设置后优先于默认的 models/<model_name>，
+# 供外部仓库指定自己的模型文件。目前仅对 rk3576 模式生效。
+MODEL_PATH_ENV = "AKA00_MODEL"
+
+
 class VisionModule:
     """视觉推理模块"""
     
@@ -52,7 +57,14 @@ class VisionModule:
         elif self.hardware_mode == 'rk3576':
             from rknn.api import RKNN
             self.rknn = RKNN()
-            model_path = os.path.join(base_dir, 'models', self.model_name)
+            # 优先使用环境变量 AKA00_MODEL 指定的模型文件，未设置时用默认路径
+            env_model = os.environ.get(MODEL_PATH_ENV, "").strip()
+            if env_model:
+                model_path = os.path.expanduser(env_model)
+                if not os.path.isfile(model_path):
+                    self.logger.warning(f"环境变量 {MODEL_PATH_ENV} 指定的模型文件不存在: {model_path}")
+            else:
+                model_path = os.path.join(base_dir, 'models', self.model_name)
             self.rknn.load_rknn(model_path)
             self.rknn.init_runtime(target='rk3576')
             self.logger.info(f"RKNN模型已加载: {model_path}")

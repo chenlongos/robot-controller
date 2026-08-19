@@ -36,11 +36,13 @@ logging.basicConfig(
     ]
 )
 
-def handle_sigterm(signal, frame):
-    logging.info("收到 SIGTERM 信号，模拟 KeyboardInterrupt")
+def handle_terminate_signal(signum, frame):
+    logging.info(f"收到信号 {signum}，模拟 KeyboardInterrupt")
     raise KeyboardInterrupt
 
-signal.signal(signal.SIGTERM, handle_sigterm)
+# SIGTERM: kill/systemd 结束进程。
+# 都转成 KeyboardInterrupt，确保统一走退出清理流程、让出串口。
+signal.signal(signal.SIGTERM, handle_terminate_signal)
     
 
 def load_calibration_params(robot_name: str, config_dir: str = 'config') -> dict:
@@ -91,36 +93,81 @@ class Robot:
     camera: CameraInterface = field(init=False)  # 摄像头
 
     def __post_init__(self):
-        """根据配置初始化机器人底盘、机械臂和摄像头"""
+        """根据配置初始化机器人底盘、机械臂和摄像头
+
+        任一环节失败时，先释放已打开的串口/设备再抛出异常，
+        避免半初始化的机器人占用机械臂和底盘的串口。
+        """
+        self.controller = None
+        self.arm_controller = None
+        self.camera = None
         try:
-            base_config = config.device.hardware.base
-            base_type = base_config.type
-            base = BaseFactory.create_base(base_type, base_config)
-            self.controller = BaseController(base, config.control)
-            logging.info("底盘控制器初始化成功")
-        except Exception as e:
-            logging.error(f"底盘控制器初始化失败: {e}")
+            try:
+                base_config = config.device.hardware.base
+                base_type = base_config.type
+                base = BaseFactory.create_base(base_type, base_config)
+                self.controller = BaseController(base, config.control)
+                logging.info("底盘控制器初始化成功")
+            except Exception as e:
+                logging.error(f"底盘控制器初始化失败: {e}")
+                raise
+            
+            try:
+                arm_config = config.device.hardware.arm
+                arm_type = arm_config.type
+                arm = ArmFactory.create_arm(arm_type, arm_config)
+                arm.connect()
+                self.arm_controller = ArmController(arm, robot_name=config.system.robot_id)
+                logging.info("机械臂控制器初始化成功")
+            except Exception as e:
+                logging.error(f"机械臂控制器初始化失败: {e}")
+                raise
+            
+            try:
+                camera_config = config.device.hardware.camera
+                camera_type = camera_config.type
+                self.camera = CameraFactory.create_camera(camera_type, camera_config)
+                logging.info("摄像头初始化成功")
+            except Exception as e:
+                logging.error(f"摄像头初始化失败: {e}")
+                raise
+        except Exception:
+            self.release()
             raise
-        
-        try:
-            arm_config = config.device.hardware.arm
-            arm_type = arm_config.type
-            arm = ArmFactory.create_arm(arm_type, arm_config)
-            arm.connect()
-            self.arm_controller = ArmController(arm, robot_name=config.system.robot_id)
-            logging.info("机械臂控制器初始化成功")
-        except Exception as e:
-            logging.error(f"机械臂控制器初始化失败: {e}")
-            raise
-        
-        try:
-            camera_config = config.device.hardware.camera
-            camera_type = camera_config.type
-            self.camera = CameraFactory.create_camera(camera_type, camera_config)
-            logging.info("摄像头初始化成功")
-        except Exception as e:
-            logging.error(f"摄像头初始化失败: {e}")
-            raise
+
+    def release(self):
+        """释放摄像头、底盘和机械臂占用的资源（含串口），让出控制权给外部程序
+
+        每步单独捕获异常，保证任一环节失败不影响其余资源的释放。
+        """
+        if self.camera is not None:
+            try:
+                self.camera.release()
+            except Exception as e:
+                logging.error(f"释放摄像头失败: {e}")
+            self.camera = None
+
+        if self.controller is not None:
+            try:
+                self.controller.stop()
+            except Exception as e:
+                logging.error(f"停止底盘失败: {e}")
+            try:
+                self.controller.base.cleanup()
+            except Exception as e:
+                logging.error(f"释放底盘串口失败: {e}")
+            self.controller = None
+
+        if self.arm_controller is not None:
+            try:
+                self.arm_controller.stop()
+            except Exception as e:
+                logging.error(f"停止机械臂失败: {e}")
+            try:
+                self.arm_controller.arm.disconnect()
+            except Exception as e:
+                logging.error(f"断开机械臂串口失败: {e}")
+            self.arm_controller = None
     
     
     def idle(self):
@@ -174,57 +221,60 @@ class Robot:
 def main():
     """主控制循环 - 捡球循环：找球->抓球->找桶->放球->找球"""
     all_timings = []    # 每帧的处理时间
-    
-    robot_name = config.system.robot_id
-    robot_type = robot_name.split("-")[0]
-    calibration_params = load_calibration_params(robot_name)
-    logging.info(f"加载校准参数: M={calibration_params['M']:.4f}, C={calibration_params['C']:.4f}")
-    
-    # 从 arm_angles 生成 arm_action_sequences，确保机械臂动作序列是最新的
-    logging.info(f"从 arm_angles_{robot_type}.json 生成 arm_action_sequences_{robot_type}.json...")
-    try:
-        angles_to_sequences(robot_type)
-    except FileNotFoundError:
-        logging.warning(f"arm_angles_{robot_type}.json 不存在，跳过动作序列生成")
-    
-    # 初始化视觉模块
-    logging.info("正在初始化视觉模块...")
-    vision_module = VisionModule(config)
-    
-    # 初始化机器人（完全通过配置文件创建，包含摄像头、底盘和机械臂）
-    logging.info("正在初始化机器人...")
-    robot = Robot()
-    
-    logging.info("机械臂回到初始位置...")
-    robot.execute_arm_action("origin")
+    vision_module = None
+    robot = None
 
-    # 初始化状态机
-    logging.info("正在初始化状态机...")
-    sm_config = {
-        'target_x': config.statemachine.target_x,
-        'target_distance': config.statemachine.target_distance,
-        'threshold_x': config.statemachine.threshold_x,
-        'threshold_d': config.statemachine.threshold_d,
-        'grip_threshold': config.statemachine.grip_threshold,
-        'grip_close': robot.arm_controller.get_close_gripper_position(),
-        'reach_count_threshold': config.statemachine.reach_count_threshold,
-        'frame_width': config.device.hardware.camera.resolution[0],
-        'frame_height': config.device.hardware.camera.resolution[1],
-        'bucket_edge_threshold': config.statemachine.bucket_edge_threshold
-    }
-    state_machine = StateMachine(sm_config)
-    
-    # 启动 WebRTC 服务器
-    if webrtc_available():
-        logging.info("启动 WebRTC 服务器...")
-        start_webrtc_server(port=8080)
-        logging.info("WebRTC 推流地址: http://<机器人IP>:8080")
-        stream_frame_interval = 1.0 / 15.0
-        last_stream_time = time.time()
-    else:
-        logging.warning("WebRTC 依赖未安装，跳过推流功能")
-
+    # 初始化和主循环都放在 try 内，保证任何阶段退出都会走 finally 释放串口
     try:
+        robot_name = config.system.robot_id
+        robot_type = robot_name.split("-")[0]
+        calibration_params = load_calibration_params(robot_name)
+        logging.info(f"加载校准参数: M={calibration_params['M']:.4f}, C={calibration_params['C']:.4f}")
+
+        # 从 arm_angles 生成 arm_action_sequences，确保机械臂动作序列是最新的
+        logging.info(f"从 arm_angles_{robot_type}.json 生成 arm_action_sequences_{robot_type}.json...")
+        try:
+            angles_to_sequences(robot_type)
+        except FileNotFoundError:
+            logging.warning(f"arm_angles_{robot_type}.json 不存在，跳过动作序列生成")
+    
+        # 初始化视觉模块
+        logging.info("正在初始化视觉模块...")
+        vision_module = VisionModule(config)
+
+        # 初始化机器人（完全通过配置文件创建，包含摄像头、底盘和机械臂）
+        logging.info("正在初始化机器人...")
+        robot = Robot()
+
+        logging.info("机械臂回到初始位置...")
+        robot.execute_arm_action("origin")
+
+        # 初始化状态机
+        logging.info("正在初始化状态机...")
+        sm_config = {
+            'target_x': config.statemachine.target_x,
+            'target_distance': config.statemachine.target_distance,
+            'threshold_x': config.statemachine.threshold_x,
+            'threshold_d': config.statemachine.threshold_d,
+            'grip_threshold': config.statemachine.grip_threshold,
+            'grip_close': robot.arm_controller.get_close_gripper_position(),
+            'reach_count_threshold': config.statemachine.reach_count_threshold,
+            'frame_width': config.device.hardware.camera.resolution[0],
+            'frame_height': config.device.hardware.camera.resolution[1],
+            'bucket_edge_threshold': config.statemachine.bucket_edge_threshold
+        }
+        state_machine = StateMachine(sm_config)
+
+        # 启动 WebRTC 服务器
+        if webrtc_available():
+            logging.info("启动 WebRTC 服务器...")
+            start_webrtc_server(port=8080)
+            logging.info("WebRTC 推流地址: http://<机器人IP>:8080")
+            stream_frame_interval = 1.0 / 15.0
+            last_stream_time = time.time()
+        else:
+            logging.warning("WebRTC 依赖未安装，跳过推流功能")
+
         while True:
             start_time = time.time() * 1000
             
@@ -443,16 +493,20 @@ def main():
 
     except KeyboardInterrupt:
         logging.info("收到中断信号，正在退出...")
-    
+
     finally:
-        # 释放资源
-        vision_module.release()
-        robot.camera.release()
-        robot.controller.stop()
-        robot.controller.base.cleanup()
-        if robot.arm_controller:
-            robot.arm_controller.stop()
-            robot.arm_controller.arm.disconnect()
+        # 释放资源，让出机械臂和底盘的串口给外部程序。
+        # 清理期间忽略重复的终止信号（如 systemd 重复下发 SIGTERM），保证释放流程不被打断。
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+        if vision_module is not None:
+            try:
+                vision_module.release()
+            except Exception as e:
+                logging.error(f"释放视觉模块失败: {e}")
+        if robot is not None:
+            robot.release()
         logging.info("资源已释放")
 
 if __name__ == "__main__":
