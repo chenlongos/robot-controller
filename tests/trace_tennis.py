@@ -2,10 +2,6 @@
 import sys
 import os
 import signal
-import json
-import asyncio
-import threading
-import fractions
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -18,65 +14,10 @@ from src.abstract.base_factory import BaseFactory
 import src.base
 from src.config_loader import load_config
 from src.camera.usb_camera import USBCamera
+from src.web.webrtc_server import start_webrtc_server, push_frame
 from _robot_select import select_robot
 
-from aiohttp import web
-from aiortc import (
-    MediaStreamTrack,
-    RTCPeerConnection,
-    RTCRtpSender,
-    RTCSessionDescription,
-)
-from aiortc.contrib.media import MediaRelay
-from av import VideoFrame
-
 running = True
-pcs = set()
-relay = None
-video_track = None
-
-class VideoTransformTrack(MediaStreamTrack):
-    kind = "video"
-
-    def __init__(self, track):
-        super().__init__()
-        self.track = track
-
-    async def recv(self):
-        frame = await self.track.recv()
-        return frame
-
-
-class OpenCVVideoTrack(MediaStreamTrack):
-    kind = "video"
-
-    def __init__(self):
-        super().__init__()
-        self.frame_queue = asyncio.Queue(maxsize=5)
-        self._start_time = time.time()
-        self._frame_count = 0
-        self._fps = 30
-
-    async def recv(self):
-        frame = await self.frame_queue.get()
-        return frame
-
-    def push_frame(self, cv_frame):
-        self._frame_count += 1
-        
-        frame = VideoFrame.from_ndarray(cv_frame, format="bgr24")
-        frame.pts = int((time.time() - self._start_time) * 1e6)
-        frame.time_base = fractions.Fraction(1, 1000000)
-        
-        try:
-            if self.frame_queue.full():
-                try:
-                    self.frame_queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    pass
-            self.frame_queue.put_nowait(frame)
-        except asyncio.QueueFull:
-            pass
 
 
 def signal_handler(signum, frame):
@@ -273,101 +214,9 @@ def draw_tracking_info(frame: cv2.Mat, detections: list, observation: dict, conf
     return frame_copy
 
 
-ROOT = os.path.dirname(__file__)
-
-
-async def index(request: web.Request) -> web.Response:
-    content = open(os.path.join(ROOT, "tennis_client.html"), "r").read()
-    return web.Response(content_type="text/html", text=content)
-
-
-async def javascript(request: web.Request) -> web.Response:
-    content = open(os.path.join(ROOT, "tennis_client.js"), "r").read()
-    return web.Response(content_type="application/javascript", text=content)
-
-
-def force_codec(pc: RTCPeerConnection, sender: RTCRtpSender, forced_codec: str) -> None:
-    kind = forced_codec.split("/")[0]
-    codecs = RTCRtpSender.getCapabilities(kind).codecs
-    transceiver = next(t for t in pc.getTransceivers() if t.sender == sender)
-    transceiver.setCodecPreferences(
-        [codec for codec in codecs if codec.mimeType == forced_codec]
-    )
-
-
-async def offer(request: web.Request) -> web.Response:
-    global relay, video_track
-    params = await request.json()
-    offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
-
-    pc = RTCPeerConnection()
-    pcs.add(pc)
-
-    @pc.on("connectionstatechange")
-    async def on_connectionstatechange() -> None:
-        logger.info("Connection state is %s" % pc.connectionState)
-        if pc.connectionState == "failed":
-            await pc.close()
-            pcs.discard(pc)
-
-    if video_track is None:
-        video_track = OpenCVVideoTrack()
-
-    if relay is None:
-        relay = MediaRelay()
-
-    video = relay.subscribe(video_track)
-
-    if video:
-        video_sender = pc.addTrack(video)
-        force_codec(pc, video_sender, "video/H264")
-
-    await pc.setRemoteDescription(offer)
-
-    answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
-
-    return web.Response(
-        content_type="application/json",
-        text=json.dumps(
-            {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
-        ),
-    )
-
-
-async def on_shutdown(app: web.Application) -> None:
-    coros = [pc.close() for pc in pcs]
-    await asyncio.gather(*coros)
-    pcs.clear()
-
-
-def start_webrtc_server(port: int = 8080):
-    async def run_server():
-        app = web.Application()
-        app.on_shutdown.append(on_shutdown)
-        app.router.add_get("/", index)
-        app.router.add_get("/tennis_client.js", javascript)
-        app.router.add_post("/offer", offer)
-
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, "0.0.0.0", port)
-        await site.start()
-        logger.info(f"WebRTC server started on port {port}")
-
-        while running:
-            await asyncio.sleep(1)
-
-        await runner.cleanup()
-
-    loop = asyncio.new_event_loop()
-    threading.Thread(target=loop.run_forever, daemon=True).start()
-    asyncio.run_coroutine_threadsafe(run_server(), loop)
-
-
 def main():
     """主程序入口"""
-    global running, video_track
+    global running
     robot_name = select_robot()
     if robot_name is None:
         return
@@ -505,12 +354,11 @@ def main():
             current_time = time.time()
             if current_time - last_stream_time >= stream_frame_interval:
                 display_frame = draw_tracking_info(frame, results, observation, config)
-                display_frame = cv2.putText(display_frame, f"State: {current_state.upper()}", 
+                display_frame = cv2.putText(display_frame, f"State: {current_state.upper()}",
                                            (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
-                
-                if video_track:
-                    video_track.push_frame(display_frame)
-                
+
+                push_frame(display_frame)
+
                 last_stream_time = current_time
             
             elapsed = time.time() - frame_start_time

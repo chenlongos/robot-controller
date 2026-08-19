@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.config_loader import load_config
 from src.controller.vision_module import VisionModule
 from src.camera.usb_camera import USBCamera
-from _robot_select import select_robot
+from tests._robot_select import select_robot
 
 
 def main():

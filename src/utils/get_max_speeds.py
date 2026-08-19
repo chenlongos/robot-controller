@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config_loader import load_config
 from src.base.drivers import Esp32C3TtDriver
-from _robot_select import list_robots, select_robot
+from tests._robot_select import list_robots, select_robot
 
 
 def find_max_motor_speed(driver, wheel_radius, wheel_base):
