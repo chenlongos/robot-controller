@@ -232,10 +232,12 @@ class Esp32C3TtDriver:
 
     def set_speeds(self, left: int, right: int) -> None:
         """设置左右轮速度（百分比 -100~100）
-        
+
         底盘层PID输出百分比，电机层映射到实际PWM值。
         映射范围: min_pwm=20 ~ max_pwm=60
         """
+        if self.ser is None or not self.ser.is_open:
+            return
         left_pct = max(-100, min(100, left))
         right_pct = max(-100, min(100, right))
         
@@ -282,6 +284,8 @@ class Esp32C3TtDriver:
     
     def stop(self) -> None:
         """停止电机"""
+        if self.ser is None or not self.ser.is_open:
+            return
         self._send_cmd_noresp(CMD_STOP, bytes([2]))
     
     def cleanup(self) -> None:

@@ -130,6 +130,9 @@ class DifferentialBase(BaseInterface):
         self.LOOP_TIME = 0.02  # 控制周期20ms（50Hz），兼顾UART通信延迟
         self.stopped = True  # 停止标志：为True时控制循环不发送电机指令
         self.running = True
+        # 串口指令互斥锁：stop()/cleanup()与控制循环并发发送指令时，
+        # 保证停止请求之后不会再发出运动指令（否则退出后底盘保持旧速度）
+        self._cmd_lock = threading.Lock()
         self.thread = threading.Thread(target=self._control_loop)
         self.thread.daemon = True
         self.thread.start()
@@ -145,61 +148,78 @@ class DifferentialBase(BaseInterface):
         2. get_rpm()获取实际RPM(电机坐标系)，乘direction_forward转为机器人坐标系
         3. PID计算(机器人坐标系)
         4. PID输出乘direction_forward还原为电机坐标系，传给set_speeds()
+
+        所有指令发送均持有_cmd_lock，并在锁内复查stopped/running：
+        一旦stop()/cleanup()请求停止，本循环绝不会再发出运动指令，
+        确保退出流程中发送的最后一条串口指令一定是停止指令。
         """
         while self.running:
-            if self.stopped:
-                # 持续重发停止指令，防止上一条运动指令因UART丢包导致底盘漂移
-                self.driver.stop()
+            try:
+                if self.stopped:
+                    # 持续重发停止指令，防止上一条运动指令因UART丢包导致底盘漂移
+                    with self._cmd_lock:
+                        if self.stopped:
+                            self.driver.stop()
+                    time.sleep(self.LOOP_TIME)
+                    continue
+
+                now = time.perf_counter()
+                dt = max(0.001, now - self.last_time)
+                self.last_time = now
+
+                # 运动学逆解：vx, vw → 左右轮目标RPM（机器人坐标系）
+                vx_rpm = (self.vx * 60) / (2 * math.pi * self.wheel_radius)
+                wheel_speed_diff = self.vw * self.wheel_base / 2
+                vw_rpm = (wheel_speed_diff * 60) / (2 * math.pi * self.wheel_radius)
+
+                target_left = vx_rpm - vw_rpm
+                target_right = vx_rpm + vw_rpm
+
+                # 获取实际RPM反馈（电机坐标系）
+                actual_left_raw, actual_right_raw = self.driver.get_rpm()
+
+                # 转换到机器人坐标系：乘direction_forward
+                actual_left = actual_left_raw * self.direction_forward
+                actual_right = actual_right_raw * self.direction_forward
+
+                # PID计算PWM输出（机器人坐标系）
+                left_pwm = self.left_pid.compute(target_left, actual_left, dt)
+                right_pwm = self.right_pid.compute(target_right, actual_right, dt)
+
+                # 根据vx/vw判断运动类型：直线主导用linear_k，旋转主导用rotation_k
+                if abs(self.vx) > abs(self.vw * self.wheel_base / 2):
+                    base_comp = self.linear_k
+                else:
+                    base_comp = self.rotation_k
+
+                # 沿每个轮子PID输出的方向施加补偿
+                left_comp = base_comp if left_pwm > 0 else (-base_comp if left_pwm < 0 else 0)
+                right_comp = base_comp if right_pwm > 0 else (-base_comp if right_pwm < 0 else 0)
+
+                # 还原到电机坐标系：乘direction_forward，再传给set_speeds()
+                left_pwm_motor = (left_pwm + left_comp) * self.direction_forward
+                right_pwm_motor = (right_pwm + right_comp) * self.direction_forward
+
+                # 发送PWM指令：get_rpm()期间可能已请求停止，锁内复查后再发送，
+                # 避免运动指令晚于停止指令发出导致退出后底盘保持旧速度
+                with self._cmd_lock:
+                    if self.stopped or not self.running:
+                        self.driver.stop()
+                    else:
+                        self.driver.set_speeds(
+                            int(round(left_pwm_motor)), int(round(right_pwm_motor)))
+
+                logger.debug(f"DifferentialBase: target=({target_left:.1f},{target_right:.1f})rpm, "
+                             f"actual=({actual_left:.1f},{actual_right:.1f})rpm, "
+                             f"pwm=({left_pwm_motor:.1f},{right_pwm_motor:.1f}), "
+                             f"comp={base_comp}(vx={self.vx:.3f},vw={self.vw:.3f})")
+
                 time.sleep(self.LOOP_TIME)
-                continue
-
-            now = time.perf_counter()
-            dt = max(0.001, now - self.last_time)
-            self.last_time = now
-
-            # 运动学逆解：vx, vw → 左右轮目标RPM（机器人坐标系）
-            vx_rpm = (self.vx * 60) / (2 * math.pi * self.wheel_radius)
-            wheel_speed_diff = self.vw * self.wheel_base / 2
-            vw_rpm = (wheel_speed_diff * 60) / (2 * math.pi * self.wheel_radius)
-
-            target_left = vx_rpm - vw_rpm
-            target_right = vx_rpm + vw_rpm
-
-            # 获取实际RPM反馈（电机坐标系）
-            actual_left_raw, actual_right_raw = self.driver.get_rpm()
-
-            # 转换到机器人坐标系：乘direction_forward
-            actual_left = actual_left_raw * self.direction_forward
-            actual_right = actual_right_raw * self.direction_forward
-
-            # PID计算PWM输出（机器人坐标系）
-            left_pwm = self.left_pid.compute(target_left, actual_left, dt)
-            right_pwm = self.right_pid.compute(target_right, actual_right, dt)
-
-            # 根据vx/vw判断运动类型：直线主导用linear_k，旋转主导用rotation_k
-            if abs(self.vx) > abs(self.vw * self.wheel_base / 2):
-                base_comp = self.linear_k
-            else:
-                base_comp = self.rotation_k
-
-            # 沿每个轮子PID输出的方向施加补偿
-            left_comp = base_comp if left_pwm > 0 else (-base_comp if left_pwm < 0 else 0)
-            right_comp = base_comp if right_pwm > 0 else (-base_comp if right_pwm < 0 else 0)
-
-            # 还原到电机坐标系：乘direction_forward，再传给set_speeds()
-            left_pwm_motor = (left_pwm + left_comp) * self.direction_forward
-            right_pwm_motor = (right_pwm + right_comp) * self.direction_forward
-
-            # 发送PWM指令
-            self.driver.set_speeds(
-                int(round(left_pwm_motor)), int(round(right_pwm_motor)))
-
-            logger.debug(f"DifferentialBase: target=({target_left:.1f},{target_right:.1f})rpm, "
-                         f"actual=({actual_left:.1f},{actual_right:.1f})rpm, "
-                         f"pwm=({left_pwm_motor:.1f},{right_pwm_motor:.1f}), "
-                         f"comp={base_comp}(vx={self.vx:.3f},vw={self.vw:.3f})")
-
-            time.sleep(self.LOOP_TIME)
+            except Exception as e:
+                # cleanup()关闭串口后，卡在get_rpm()等串口操作会抛异常，退出循环即可
+                if self.running:
+                    logger.error(f"控制循环异常退出: {e}")
+                break
 
     def move(self, x: float, y: float, w: float) -> None:
         """控制底盘运动
@@ -221,12 +241,18 @@ class DifferentialBase(BaseInterface):
         self.vw = 0.0
         self.left_pid.reset()
         self.right_pid.reset()
-        self.driver.stop()
+        with self._cmd_lock:
+            self.driver.stop()
 
     def cleanup(self) -> None:
         """释放资源"""
         self.running = False
+        # get_rpm()单次调用最长阻塞约1.5s（1s超时+0.5s接收窗口），等待需覆盖该时长
+        self.thread.join(timeout=2.5)
         if self.thread.is_alive():
-            self.thread.join(timeout=1)
+            logger.warning("控制循环线程未能在超时内退出")
+        # 线程退出后补发停止指令，确保发往ESP32的最后一条指令是停止而非运动
+        with self._cmd_lock:
+            self.driver.stop()
         self.driver.cleanup()
         logger.info("Differential Base cleaned up")
