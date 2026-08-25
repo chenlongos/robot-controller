@@ -368,7 +368,7 @@ class ZP10SArm(ArmInterface):
         
         self.stop()
         
-        self.release_torque()
+        # self.release_torque()
         
         if self.ser.is_open:
             self.ser.close()
